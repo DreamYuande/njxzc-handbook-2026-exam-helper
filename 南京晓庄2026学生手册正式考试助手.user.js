@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.11
+// @version      1.3.0
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -473,7 +473,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.11';
+  const SCRIPT_VERSION = '1.3.0';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -491,7 +491,7 @@
       *{box-sizing:border-box}.card{display:flex;flex-direction:column;max-height:calc(100dvh - 16px);background:#fff;border:1px solid #dce2ee;border-radius:13px;box-shadow:0 5px 24px #25365424;overflow:hidden}
       header{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;padding:9px 12px;background:#f3f5ff;cursor:move;touch-action:none;user-select:none}
       strong{font-size:14px}.script-version{display:block;font-size:11px;color:#6a7588;line-height:1.4}button{font:inherit;cursor:pointer;border:0;border-radius:7px;padding:6px 10px;background:#eef1f7;color:#263249}
-      #fold{padding:1px 7px;background:transparent;font-size:19px}.body{min-height:0;padding:10px 12px;max-height:660px;overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}.notice{color:#d92d20;font-weight:700}.notice span{display:inline-block}
+      #fold{padding:1px 7px;background:transparent;font-size:19px}.body{min-height:0;padding:10px 12px 6px;max-height:660px;overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}.notice{color:#d92d20;font-weight:700}.notice span{display:inline-block}
       #status{margin:6px 0;white-space:pre-line}.actions{display:flex;gap:7px;margin-top:8px}.profile-actions button{flex:1;padding:6px 4px;white-space:nowrap}#start{background:#5965da;color:white}
       details{margin-top:7px}summary{cursor:pointer;color:#5865c9}ol{padding-left:22px;margin:5px 0;max-height:140px;overflow:auto;font-size:12px}
       .body::-webkit-scrollbar,ol::-webkit-scrollbar{width:6px;height:6px}
@@ -504,7 +504,7 @@
       button:disabled{opacity:.5;cursor:default}#profile-message{margin-top:6px;color:#6a7588;font-size:12px}#profile-message:empty,#bank-message:empty{display:none}
       footer{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid #edf0f5;color:#6a7588;font-size:11px}
       footer a{display:inline-flex;align-items:center;gap:4px;color:#5965da;text-decoration:none;min-height:28px}footer a:hover{text-decoration:underline}footer svg{fill:currentColor;flex-shrink:0}
-      .clear-area{flex-shrink:0;padding:8px 12px;border-top:1px solid #edf0f5}#clear-data{display:block;margin:0 auto;padding:4px 10px;font-size:12px;line-height:1.5;border-radius:6px;background:#fff1f0;color:#c62828}#clear-data:hover:not(:disabled){background:#ffe4e1}#clear-message{margin-top:5px;font-size:11px;color:#d92d20}#clear-message:empty{display:none}
+      .clear-area{flex-shrink:0;padding:0 12px 8px}#clear-data{display:block;margin:0 auto;padding:4px 10px;font-size:12px;line-height:1.5;border-radius:6px;background:#fff1f0;color:#c62828}#clear-data:hover:not(:disabled){background:#ffe4e1}
       .folded .body,.folded footer,.folded .clear-area{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
     </style>
     <section class="card"><header><div><strong>学生手册正式考试助手</strong><span class="script-version">v${SCRIPT_VERSION}</span></div><button id="fold" type="button" aria-label="收起或展开">−</button></header>
@@ -518,7 +518,7 @@
         <label>学院<select id="profile-college"><option value="">等待问卷学院列表加载…</option></select></label>
         <label>学号<input id="profile-student-id" type="text" inputmode="numeric" autocomplete="off" placeholder="填写学号"></label>
         </details><div class="actions profile-actions"><button id="save" type="button">临时保存信息</button><button id="start" type="button" disabled>开始填写</button></div><div id="profile-message" role="status" aria-live="polite"></div></div>
-      <div class="clear-area"><button id="clear-data" type="button">清除信息与网站数据</button><div id="clear-message" role="status" aria-live="polite"></div></div>
+      <div class="clear-area"><button id="clear-data" type="button">清除表单数据</button></div>
       <footer><span>© 2026 DreamYuande</span><a href="https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 GitHub 项目主页"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg><span>GitHub</span></a></footer>
       </section>`;
   document.documentElement.appendChild(host);
@@ -615,7 +615,7 @@
     start.textContent = reloading ? '正在开始…' : '开始填写';
     updateBank.disabled = updatingBank || cooldown > 0 || reloading || clearingData;
     clearData.disabled = updatingBank || reloading || clearingData;
-    clearData.textContent = clearingData ? '正在清理…' : '清除信息与网站数据';
+    clearData.textContent = '清除表单数据';
     updateBank.textContent = updatingBank ? '正在检查…' : cooldown > 0 ? `当前已是最新(${cooldown})` : '检查题库更新';
     panel.getElementById('bank-version').textContent = `题库 ${bankState.bank.version} · ${bankState.bank.questions.length}题 · ${bankState.source}`;
     panel.getElementById('bank-message').textContent = bankMessage;
@@ -791,7 +791,7 @@
   start.addEventListener('click', () => persistProfile(true));
   clearData.addEventListener('click', async () => {
     if (updatingBank || reloading || clearingData) return;
-    if (!confirm('清除信息与网站数据？\n\n将清除已保存的姓名、学院、学号、脚本设置和题库缓存，以及 ks.wjx.com 可访问的网站存储、Cookie、离线缓存和数据库。可能影响登录状态、未提交内容和同站点其他页面。\n\nHttpOnly Cookie、其他路径的 Cookie 和浏览器网络缓存需在浏览器站点设置中清除。\n\n确认后清理并刷新页面。')) return;
+    if (!confirm('确定清除表单数据并刷新页面吗？\n\n将尝试清理已保存的信息、当前网站可访问的 Cookie 和缓存，可能影响同站点其他页面。浏览器保护的数据不会被清除。')) return;
     clearingData = true;
     auto = false;
     generation++;
@@ -800,8 +800,6 @@
     savedDraft = activeProfile = null;
     profileReady = false;
     profileMessage = '';
-    const message = panel.getElementById('clear-message');
-    message.textContent = '';
     renderStatus();
     const report = await clearSiteData();
     bankState = {bank:validateBank(DEFAULT_BANK), source:'内置'};
@@ -814,15 +812,10 @@
     results.clear();
     clearingData = false;
     const remaining = [...report.failed, ...report.unavailable];
-    if (remaining.length) {
-      message.textContent = `部分项目未能清理：${remaining.join('、')}。填写已停止，可关闭其他问卷星标签页后重试，或使用浏览器站点设置清除数据。`;
-      panel.getElementById('settings').open = true;
-    } else {
-      reloading = true;
-      message.textContent = '已清理可访问的数据，正在刷新…';
-    }
+    if (remaining.length) console.warn('部分网站数据未能清理：' + remaining.join('、'));
+    reloading = true;
     renderStatus();
-    if (reloading) location.reload();
+    location.reload();
   });
   panel.getElementById('fold').addEventListener('click', () => {
     const folded = panel.querySelector('.card').classList.toggle('folded');
