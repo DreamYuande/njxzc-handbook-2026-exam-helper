@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.10
+// @version      1.2.11
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -473,7 +473,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.10';
+  const SCRIPT_VERSION = '1.2.11';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -504,7 +504,7 @@
       button:disabled{opacity:.5;cursor:default}#profile-message{margin-top:6px;color:#6a7588;font-size:12px}#profile-message:empty,#bank-message:empty{display:none}
       footer{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid #edf0f5;color:#6a7588;font-size:11px}
       footer a{display:inline-flex;align-items:center;gap:4px;color:#5965da;text-decoration:none;min-height:28px}footer a:hover{text-decoration:underline}footer svg{fill:currentColor;flex-shrink:0}
-      .clear-area{flex-shrink:0;padding:8px 12px;border-top:1px solid #edf0f5}#clear-data{width:100%;background:#d92d20;color:#fff}#clear-message{margin-top:5px;font-size:11px;color:#d92d20}#clear-message:empty{display:none}
+      .clear-area{flex-shrink:0;padding:8px 12px;border-top:1px solid #edf0f5}#clear-data{display:block;margin:0 auto;padding:4px 10px;font-size:12px;line-height:1.5;border-radius:6px;background:#fff1f0;color:#c62828}#clear-data:hover:not(:disabled){background:#ffe4e1}#clear-message{margin-top:5px;font-size:11px;color:#d92d20}#clear-message:empty{display:none}
       .folded .body,.folded footer,.folded .clear-area{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
     </style>
     <section class="card"><header><div><strong>学生手册正式考试助手</strong><span class="script-version">v${SCRIPT_VERSION}</span></div><button id="fold" type="button" aria-label="收起或展开">−</button></header>
