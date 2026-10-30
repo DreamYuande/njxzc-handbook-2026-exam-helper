@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "dataset": "njxzc-handbook-2026",
-  "version": "2026.10.30.7",
+  "version": "2026.10.30.8",
   "updatedAt": "2026-10-30",
   "questions": [
     {
@@ -330,7 +330,7 @@
         "不可以",
         "看情况"
       ],
-      "answer": null
+      "answer": "B"
     },
     {
       "id": 30,
