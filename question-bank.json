@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "dataset": "njxzc-handbook-2026",
-  "version": "2026.10.30.3",
+  "version": "2026.10.30.4",
   "updatedAt": "2026-10-30",
   "questions": [
     {
@@ -453,7 +453,7 @@
         "每学期期末",
         "11月1-10日"
       ],
-      "answer": null
+      "answer": "B"
     },
     {
       "id": 41,
@@ -1226,7 +1226,7 @@
         "不可以",
         "困难补助和是否参加勤工助学没有关系"
       ],
-      "answer": null
+      "answer": "B"
     },
     {
       "id": 110,
@@ -3495,7 +3495,7 @@
         "必修",
         "重修"
       ],
-      "answer": null
+      "answer": "AC"
     },
     {
       "id": 306,
