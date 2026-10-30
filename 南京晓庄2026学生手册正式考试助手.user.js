@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.8
+// @version      1.2.9
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -207,6 +207,12 @@
     return draft;
   }
 
+  function isSavedProfileReady(draft, current, availableColleges) {
+    return Boolean(draft && current.name && /^[0-9]{8}$/.test(current.studentId) &&
+      availableColleges.includes(current.college) &&
+      ['name','studentId','college'].every(key => draft[key] === current[key]));
+  }
+
   function consumeStartRequest(profile, storage) {
     try {
       const store = storage || sessionStorage;
@@ -406,7 +412,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.8';
+  const SCRIPT_VERSION = '1.2.9';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -449,7 +455,7 @@
         <label>姓名<input id="profile-name" type="text" autocomplete="off" placeholder="填写姓名"></label>
         <label>学院<select id="profile-college"><option value="">等待问卷学院列表加载…</option></select></label>
         <label>学号<input id="profile-student-id" type="text" inputmode="numeric" autocomplete="off" placeholder="填写学号"></label>
-        </details><div class="actions profile-actions"><button id="save" type="button">临时保存信息</button><button id="start" type="button">开始填写</button></div><div id="profile-message" role="status" aria-live="polite"></div></div>
+        </details><div class="actions profile-actions"><button id="save" type="button">临时保存信息</button><button id="start" type="button" disabled>开始填写</button></div><div id="profile-message" role="status" aria-live="polite"></div></div>
       <footer><span>© 2026 DreamYuande</span><a href="https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 GitHub 项目主页"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg><span>GitHub</span></a></footer>
       </section>`;
   document.documentElement.appendChild(host);
@@ -518,8 +524,9 @@
   let lastRender = '';
 
   function canStart() {
-    return Boolean(savedDraft && savedDraft.name === nameSetting.value.trim() &&
-      savedDraft.studentId === idSetting.value.trim() && savedDraft.college === collegeSetting.value.trim());
+    return isSavedProfileReady(savedDraft, {
+      name:nameSetting.value.trim(), studentId:idSetting.value.trim(), college:collegeSetting.value.trim()
+    }, readCollegeOptions().map(option => option.textContent.trim()));
   }
 
   function renderStatus() {
@@ -539,7 +546,7 @@
     status.textContent = `${auto ? '自动模式' : '等待开始'}\n题库 ${done-fallback} 题，随机/全选 ${fallback} 题\n未处理 ${errors} 题`;
     save.disabled = updatingBank || reloading;
     start.disabled = updatingBank || reloading || !startReady;
-    start.title = startReady ? '' : '请先临时保存当前信息';
+    start.title = startReady ? '' : '请填写姓名、选择学院，输入8位数字学号，并临时保存当前信息';
     start.textContent = reloading ? '正在开始…' : '开始填写';
     updateBank.disabled = updatingBank || cooldown > 0 || reloading;
     updateBank.textContent = updatingBank ? '正在检查…' : cooldown > 0 ? `当前已是最新(${cooldown})` : '检查题库更新';
@@ -566,6 +573,7 @@
 
   async function scan() {
     syncCollegeOptions();
+    renderStatus();
     if (!auto || busy || !activeProfile || needsReload) return;
     busy = true;
     fillingComplete = false;
@@ -672,7 +680,10 @@
     profileMessage = '';
     renderStatus();
   }
-  for (const input of [nameSetting,idSetting]) input.addEventListener('input', profileChanged);
+  for (const input of [nameSetting,idSetting]) {
+    input.addEventListener('input', profileChanged);
+    input.addEventListener('change', profileChanged);
+  }
   collegeSetting.addEventListener('change', profileChanged);
   function persistProfile(begin) {
     if (updatingBank || reloading) return;

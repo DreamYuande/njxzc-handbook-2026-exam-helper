@@ -7,7 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, '..', '南京晓庄2026学�
 const context = vm.createContext({URL, setTimeout, clearTimeout});
 vm.runInContext(source.split('// __TEST_EXPORT_POINT__')[0] + `
   globalThis.api = {PROFILE_KEY, PROFILE_DRAFT_KEY, saveProfile, loadProfile,
-    saveProfileDraft, loadProfileDraft, fillBasicInformation, START_REQUEST_KEY, consumeStartRequest};})();`, context);
+    saveProfileDraft, loadProfileDraft, isSavedProfileReady, fillBasicInformation, START_REQUEST_KEY, consumeStartRequest};})();`, context);
 const api = context.api;
 const plain = value => JSON.parse(JSON.stringify(value));
 function storage() {
@@ -40,6 +40,24 @@ test('starting accepts only eight ASCII digits, including leading zeroes, before
   assert.equal(api.saveProfile(' 姓名 ',' 26000001 ',' 学院 ',store).studentId,'26000001');
   assert.throws(()=>api.saveProfile('','26000001','学院',store),/姓名和学号/);
   assert.throws(()=>api.saveProfile('姓名','26000001','',store),/选择学院/);
+});
+
+test('start requires a complete valid saved draft matching current fields and an available college', () => {
+  const profile = {name:'姓名', studentId:'01234567', college:'学院'};
+  const colleges = ['学院'];
+  assert.equal(api.isSavedProfileReady({...profile},profile,colleges),true);
+  assert.equal(api.isSavedProfileReady(null,profile,colleges),false);
+  for (const current of [
+    {name:'',studentId:'',college:''},
+    {...profile,name:''}, {...profile,college:''},
+    {...profile,studentId:'1234567'}, {...profile,studentId:'123456789'},
+    {...profile,studentId:'１２３４５６７８'}, {...profile,studentId:'1234x678'}
+  ]) assert.equal(api.isSavedProfileReady({...current},current,colleges),false);
+  for (const key of ['name','studentId','college']) {
+    assert.equal(api.isSavedProfileReady(profile,{...profile,[key]:profile[key]+'x'},colleges),false);
+  }
+  assert.equal(api.isSavedProfileReady(profile,profile,[]),false);
+  assert.equal(api.isSavedProfileReady(profile,profile,['其他学院']),false);
 });
 
 test('invalid student IDs cannot reach page controls, including from old saved profiles', () => {
