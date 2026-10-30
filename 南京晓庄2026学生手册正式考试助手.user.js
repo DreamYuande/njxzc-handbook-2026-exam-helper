@@ -4,13 +4,14 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.9
+// @version      1.2.10
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_deleteValue
 // @connect      gh-proxy.com
 // @noframes
 // ==/UserScript==
@@ -223,6 +224,66 @@
     } catch { return false; }
   }
 
+  async function clearSiteData(env = window, deleteBank = key => GM_deleteValue(key)) {
+    const report = {cleared:[], failed:[], unavailable:[]};
+    async function clear(label, action) {
+      let timer;
+      try {
+        const result = await Promise.race([
+          Promise.resolve().then(action),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('清理超时')), 5000); })
+        ]);
+        report[result === false ? 'unavailable' : 'cleared'].push(label);
+      } catch { report.failed.push(label); }
+      finally { clearTimeout(timer); }
+    }
+    await clear('脚本题库缓存', () => deleteBank(BANK_CACHE_KEY));
+    await clear('离线服务', async () => {
+      const serviceWorker = env.navigator?.serviceWorker;
+      if (!serviceWorker?.getRegistrations) return false;
+      const registrations = await serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(registration => registration.unregister()));
+    });
+    await clear('离线缓存', async () => {
+      if (!env.caches?.keys) return false;
+      const keys = await env.caches.keys();
+      await Promise.all(keys.map(key => env.caches.delete(key)));
+    });
+    await clear('站点数据库', async () => {
+      if (!env.indexedDB?.databases) return false;
+      const databases = await env.indexedDB.databases();
+      const results = await Promise.allSettled(databases.filter(db => typeof db.name === 'string').map(db =>
+        new Promise((resolve, reject) => {
+          const request = env.indexedDB.deleteDatabase(db.name);
+          request.onsuccess = () => resolve();
+          request.onerror = request.onblocked = () => reject(new Error('数据库无法删除或仍被占用'));
+        })));
+      if (results.some(result => result.status === 'rejected')) throw new Error('部分数据库未清除');
+    });
+    await clear('网站 Cookie', () => {
+      // 仅能删除当前页面可读取的 Cookie，HttpOnly Cookie 不在此范围内。
+      const names = [...new Set(env.document.cookie.split(';').map(cookie => cookie.split('=')[0].trim()).filter(Boolean))];
+      const parts = env.location.pathname.split('/');
+      const paths = new Set(['/']);
+      for (let i = 1; i <= parts.length; i++) {
+        const path = parts.slice(0, i).join('/') || '/';
+        paths.add(path); paths.add(path.endsWith('/') ? path : path + '/');
+      }
+      const host = env.location.hostname.split('.');
+      const domains = [''];
+      for (let i = 0; i < host.length - 1; i++) domains.push(host.slice(i).join('.'));
+      for (const name of names) for (const path of paths) for (const domain of domains) {
+        const expired = `${name}=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=${path}; Secure${domain ? '; Domain=' + domain : ''}`;
+        env.document.cookie = expired;
+        env.document.cookie = expired + '; Partitioned';
+      }
+      if (env.document.cookie.trim()) throw new Error('仍有可读取的 Cookie');
+    });
+    await clear('网站本地信息', () => { env.localStorage.clear(); });
+    await clear('本标签页会话信息', () => { env.sessionStorage.clear(); });
+    return report;
+  }
+
   function normalize(value) {
     return String(value ?? '').normalize('NFKC')
       .replace(/【(?:多选题|单选题)】|\[(?:多选题|单选题)\]/g, '')
@@ -412,7 +473,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.9';
+  const SCRIPT_VERSION = '1.2.10';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -443,7 +504,8 @@
       button:disabled{opacity:.5;cursor:default}#profile-message{margin-top:6px;color:#6a7588;font-size:12px}#profile-message:empty,#bank-message:empty{display:none}
       footer{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid #edf0f5;color:#6a7588;font-size:11px}
       footer a{display:inline-flex;align-items:center;gap:4px;color:#5965da;text-decoration:none;min-height:28px}footer a:hover{text-decoration:underline}footer svg{fill:currentColor;flex-shrink:0}
-      .folded .body,.folded footer{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
+      .clear-area{flex-shrink:0;padding:8px 12px;border-top:1px solid #edf0f5}#clear-data{width:100%;background:#d92d20;color:#fff}#clear-message{margin-top:5px;font-size:11px;color:#d92d20}#clear-message:empty{display:none}
+      .folded .body,.folded footer,.folded .clear-area{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
     </style>
     <section class="card"><header><div><strong>学生手册正式考试助手</strong><span class="script-version">v${SCRIPT_VERSION}</span></div><button id="fold" type="button" aria-label="收起或展开">−</button></header>
       <div class="body"><div class="muted notice">参考题库非官方答案 · <span>酌情参考</span></div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
@@ -456,6 +518,7 @@
         <label>学院<select id="profile-college"><option value="">等待问卷学院列表加载…</option></select></label>
         <label>学号<input id="profile-student-id" type="text" inputmode="numeric" autocomplete="off" placeholder="填写学号"></label>
         </details><div class="actions profile-actions"><button id="save" type="button">临时保存信息</button><button id="start" type="button" disabled>开始填写</button></div><div id="profile-message" role="status" aria-live="polite"></div></div>
+      <div class="clear-area"><button id="clear-data" type="button">清除信息与网站数据</button><div id="clear-message" role="status" aria-live="polite"></div></div>
       <footer><span>© 2026 DreamYuande</span><a href="https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 GitHub 项目主页"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg><span>GitHub</span></a></footer>
       </section>`;
   document.documentElement.appendChild(host);
@@ -475,12 +538,14 @@
   let bankMessage = '';
   let bankCooldownUntil = 0;
   let reloading = false;
+  let clearingData = false;
   let generation = 0;
   const completed = new WeakMap();
   const status = panel.getElementById('status');
   const save = panel.getElementById('save');
   const start = panel.getElementById('start');
   const updateBank = panel.getElementById('update-bank');
+  const clearData = panel.getElementById('clear-data');
   const nameSetting = panel.getElementById('profile-name');
   const idSetting = panel.getElementById('profile-student-id');
   const collegeSetting = panel.getElementById('profile-college');
@@ -540,15 +605,17 @@
     const cooldown = Math.max(0, Math.ceil((bankCooldownUntil - Date.now()) / 1000));
     const startReady = canStart();
     const complete = fillingComplete && auto && !busy && !needsReload;
-    const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,startReady,complete,issues.map(r => [r.number,r.reason])]);
+    const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,clearingData,startReady,complete,issues.map(r => [r.number,r.reason])]);
     if (signature === lastRender) return;
     lastRender = signature;
     status.textContent = `${auto ? '自动模式' : '等待开始'}\n题库 ${done-fallback} 题，随机/全选 ${fallback} 题\n未处理 ${errors} 题`;
-    save.disabled = updatingBank || reloading;
-    start.disabled = updatingBank || reloading || !startReady;
+    save.disabled = updatingBank || reloading || clearingData;
+    start.disabled = updatingBank || reloading || clearingData || !startReady;
     start.title = startReady ? '' : '请填写姓名、选择学院，输入8位数字学号，并临时保存当前信息';
     start.textContent = reloading ? '正在开始…' : '开始填写';
-    updateBank.disabled = updatingBank || cooldown > 0 || reloading;
+    updateBank.disabled = updatingBank || cooldown > 0 || reloading || clearingData;
+    clearData.disabled = updatingBank || reloading || clearingData;
+    clearData.textContent = clearingData ? '正在清理…' : '清除信息与网站数据';
     updateBank.textContent = updatingBank ? '正在检查…' : cooldown > 0 ? `当前已是最新(${cooldown})` : '检查题库更新';
     panel.getElementById('bank-version').textContent = `题库 ${bankState.bank.version} · ${bankState.bank.questions.length}题 · ${bankState.source}`;
     panel.getElementById('bank-message').textContent = bankMessage;
@@ -574,7 +641,7 @@
   async function scan() {
     syncCollegeOptions();
     renderStatus();
-    if (!auto || busy || !activeProfile || needsReload) return;
+    if (!auto || busy || !activeProfile || needsReload || clearingData) return;
     busy = true;
     fillingComplete = false;
     renderStatus();
@@ -628,7 +695,7 @@
   }
 
   updateBank.addEventListener('click', async () => {
-    if (updatingBank || reloading || Date.now() < bankCooldownUntil) return;
+    if (updatingBank || reloading || clearingData || Date.now() < bankCooldownUntil) return;
     const wasAuto = auto;
     updatingBank = true;
     auto = false;
@@ -660,6 +727,7 @@
   });
 
   fallbackSetting.addEventListener('change', () => {
+    if (clearingData) return;
     fallbackMode = fallbackSetting.value === 'guess' ? 'guess' : 'skip';
     try { localStorage.setItem(FALLBACK_KEY, fallbackMode); }
     catch { profileMessage = '当前浏览器无法保存兜底设置，本次设置仍然有效。'; }
@@ -686,7 +754,7 @@
   }
   collegeSetting.addEventListener('change', profileChanged);
   function persistProfile(begin) {
-    if (updatingBank || reloading) return;
+    if (updatingBank || reloading || clearingData) return;
     if (begin && !canStart()) {
       profileMessage = '请先临时保存当前信息。';
       renderStatus();
@@ -721,6 +789,41 @@
   }
   save.addEventListener('click', () => persistProfile(false));
   start.addEventListener('click', () => persistProfile(true));
+  clearData.addEventListener('click', async () => {
+    if (updatingBank || reloading || clearingData) return;
+    if (!confirm('清除信息与网站数据？\n\n将清除已保存的姓名、学院、学号、脚本设置和题库缓存，以及 ks.wjx.com 可访问的网站存储、Cookie、离线缓存和数据库。可能影响登录状态、未提交内容和同站点其他页面。\n\nHttpOnly Cookie、其他路径的 Cookie 和浏览器网络缓存需在浏览器站点设置中清除。\n\n确认后清理并刷新页面。')) return;
+    clearingData = true;
+    auto = false;
+    generation++;
+    needsReload = true;
+    fillingComplete = false;
+    savedDraft = activeProfile = null;
+    profileReady = false;
+    profileMessage = '';
+    const message = panel.getElementById('clear-message');
+    message.textContent = '';
+    renderStatus();
+    const report = await clearSiteData();
+    bankState = {bank:validateBank(DEFAULT_BANK), source:'内置'};
+    index = buildBankIndex(bankState.bank.questions);
+    bankMessage = '';
+    bankCooldownUntil = 0;
+    fallbackMode = fallbackSetting.value = 'skip';
+    nameSetting.value = idSetting.value = selectedCollege = '';
+    collegeSetting.value = '';
+    results.clear();
+    clearingData = false;
+    const remaining = [...report.failed, ...report.unavailable];
+    if (remaining.length) {
+      message.textContent = `部分项目未能清理：${remaining.join('、')}。填写已停止，可关闭其他问卷星标签页后重试，或使用浏览器站点设置清除数据。`;
+      panel.getElementById('settings').open = true;
+    } else {
+      reloading = true;
+      message.textContent = '已清理可访问的数据，正在刷新…';
+    }
+    renderStatus();
+    if (reloading) location.reload();
+  });
   panel.getElementById('fold').addEventListener('click', () => {
     const folded = panel.querySelector('.card').classList.toggle('folded');
     panel.getElementById('fold').textContent = folded ? '+' : '−';
