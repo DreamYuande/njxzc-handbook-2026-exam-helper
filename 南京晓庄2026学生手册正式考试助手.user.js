@@ -4,14 +4,14 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.7
+// @version      1.2.8
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @connect      cdn.jsdelivr.net
+// @connect      gh-proxy.com
 // @noframes
 // ==/UserScript==
 
@@ -32,7 +32,7 @@
   const START_REQUEST_KEY = 'njxzc.handbook.formal.start.v1';
   const FALLBACK_KEY = 'njxzc.handbook.formal.fallback.v1';
   const BANK_CACHE_KEY = 'njxzc.handbook.formal.bank.v1';
-  const BANK_URL = 'https://cdn.jsdelivr.net/gh/DreamYuande/njxzc-handbook-2026-exam-helper@main/question-bank.json';
+  const BANK_URL = 'https://gh-proxy.com/https://raw.githubusercontent.com/DreamYuande/njxzc-handbook-2026-exam-helper/refs/heads/main/question-bank.json';
 
   function compareBankVersions(a, b) {
     const left = a.split('.').map(Number), right = b.split('.').map(Number);
@@ -406,7 +406,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.7';
+  const SCRIPT_VERSION = '1.2.8';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
