@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "dataset": "njxzc-handbook-2026",
-  "version": "2026.10.30.6",
+  "version": "2026.10.30.7",
   "updatedAt": "2026-10-30",
   "questions": [
     {
@@ -46,7 +46,7 @@
         "需要重新申请",
         "不需要，一次认定，四年有效"
       ],
-      "answer": null
+      "answer": "A"
     },
     {
       "id": 5,
@@ -642,7 +642,7 @@
         "2022年",
         "2023年"
       ],
-      "answer": null
+      "answer": "C"
     },
     {
       "id": 58,
