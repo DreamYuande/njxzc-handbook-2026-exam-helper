@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.4
+// @version      1.2.5
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -406,7 +406,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.4';
+  const SCRIPT_VERSION = '1.2.5';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -549,7 +549,7 @@
     if (complete) {
       const reminder = document.createElement('strong');
       reminder.className = 'notice';
-      reminder.textContent = '（请勿过早提交以免被判异常）';
+      reminder.textContent = '请勿过早提交以免被判异常';
       message.replaceChildren(document.createTextNode('相关内容自动填写完毕，请自行检查并提交，'), reminder);
     } else {
       message.textContent = profileMessage;
