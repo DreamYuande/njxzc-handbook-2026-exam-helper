@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.1.3
+// @version      1.1.4
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。保存基本信息后刷新自动填写；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动从GitHub更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -399,6 +399,12 @@
       #fold{padding:1px 7px;background:transparent;font-size:19px}.body{min-height:0;padding:10px 12px;max-height:660px;overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}
       #status{margin:6px 0;white-space:pre-line}.actions{display:flex;gap:7px;margin-top:8px}#toggle{background:#5965da;color:white}
       details{margin-top:7px}summary{cursor:pointer;color:#5865c9}ol{padding-left:22px;margin:5px 0;max-height:140px;overflow:auto;font-size:12px}
+      .body::-webkit-scrollbar,ol::-webkit-scrollbar{width:6px;height:6px}
+      .body::-webkit-scrollbar-track,ol::-webkit-scrollbar-track{background:transparent}
+      .body::-webkit-scrollbar-thumb,ol::-webkit-scrollbar-thumb{background:#cdd3e2;border-radius:6px}
+      .body:hover::-webkit-scrollbar-thumb,.body:focus-within::-webkit-scrollbar-thumb,ol:hover::-webkit-scrollbar-thumb{background:#a6afc5}
+      .body::-webkit-scrollbar-button,ol::-webkit-scrollbar-button{display:none;width:0;height:0}
+      @supports not selector(::-webkit-scrollbar){.body,ol{scrollbar-width:thin;scrollbar-color:#cdd3e2 transparent}.body:hover,.body:focus-within,ol:hover{scrollbar-color:#a6afc5 transparent}}
       label{display:block;margin:6px 0}input,select{display:block;width:100%;font:inherit;padding:5px 7px;border:1px solid #dce2ee;border-radius:6px;color:#263249;background:#fff}select:disabled{background:#f3f5f8}
       #save{width:100%;margin:4px 0;background:#5965da;color:#fff}button:disabled{opacity:.5;cursor:default}#profile-message{margin-top:6px;color:#6a7588;font-size:12px}
       footer{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid #edf0f5;color:#6a7588;font-size:11px}
