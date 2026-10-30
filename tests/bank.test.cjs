@@ -25,7 +25,7 @@ function newer() {
   return bank;
 }
 
-test('hosted JSON validates, preserves coverage, and includes the four-choice screenshot correction', () => {
+test('hosted JSON validates, preserves coverage, and includes the competition award correction', () => {
   const api = fresh();
   assert.deepEqual(clone(api.validateBank(published)),published);
   api.ensureBankCoverage(published,bundled);
@@ -34,6 +34,18 @@ test('hosted JSON validates, preserves coverage, and includes the four-choice sc
   assert.match(question.question,/学科竞赛奖/);
   assert.equal(question.answer,'ABCD');
   assert.deepEqual(clone(api.planQuestion(question.question,'4',question.options).indices),[0,1,2,3]);
+});
+
+test('temporary hardship subsidy maximum maps to 4000 yuan even with shuffled options', () => {
+  const api=fresh();
+  const question=published.questions.find(item=>item.id===51);
+  assert.match(question.question,/临时困难补助的最高金额/);
+  assert.equal(question.options[question.answer.charCodeAt(0)-65],'4000元');
+  for(const options of [question.options,['4000元','2000元','3000元'],[...question.options].reverse()]) {
+    const plan=api.planQuestion(question.question,question.type,options);
+    assert.equal(plan.status,'ready');
+    assert.deepEqual(Array.from(plan.indices,i=>options[i]),['4000元']);
+  }
 });
 
 test('all answered records map correctly across three option orders; unknown answers stay skipped', () => {
