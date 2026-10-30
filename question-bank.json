@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "dataset": "njxzc-handbook-2026",
-  "version": "2026.10.30.5",
+  "version": "2026.10.30.6",
   "updatedAt": "2026-10-30",
   "questions": [
     {
@@ -1442,7 +1442,7 @@
         "留校察看",
         "留校察看及以上"
       ],
-      "answer": null
+      "answer": "B"
     },
     {
       "id": 129,
@@ -3349,7 +3349,7 @@
         "提供证明材料弄虚作假",
         "出入酒吧等娱乐场所"
       ],
-      "answer": null
+      "answer": "ABCD"
     },
     {
       "id": 294,
