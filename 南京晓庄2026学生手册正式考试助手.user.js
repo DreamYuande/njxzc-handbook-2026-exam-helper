@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.0
+// @version      1.2.1
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。支持临时保存基本信息，点击开始填写后保存并自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -28,6 +28,7 @@
   const TYPES = new Set(['3', '4']);
   // 与模拟版共用基本信息；正式版设置和浮窗使用独立标识。
   const PROFILE_KEY = 'njxzc.handbook.profile.v1';
+  const PROFILE_DRAFT_KEY = 'njxzc.handbook.formal.profile-draft.v1';
   const FALLBACK_KEY = 'njxzc.handbook.formal.fallback.v1';
   const BANK_CACHE_KEY = 'njxzc.handbook.formal.bank.v1';
   const BANK_URL = 'https://raw.githubusercontent.com/DreamYuande/njxzc-handbook-2026-exam-helper/main/question-bank.json';
@@ -186,9 +187,23 @@
   function saveProfile(name, studentId, college, storage) {
     const profile = {name:String(name).trim(), studentId:String(studentId).trim(), college:String(college ?? '').trim()};
     if (!profile.name || !profile.studentId) throw new Error('请先填写姓名和学号');
+    if (!/^[0-9]{8}$/.test(profile.studentId)) throw new Error('学号必须为8位数字');
     if (!profile.college) throw new Error('请先选择学院');
     (storage || localStorage).setItem(PROFILE_KEY, JSON.stringify(profile));
     return profile;
+  }
+
+  function loadProfileDraft(storage) {
+    try {
+      const draft = JSON.parse((storage || localStorage).getItem(PROFILE_DRAFT_KEY) || 'null');
+      return draft && ['name','studentId','college'].every(key => typeof draft[key] === 'string') ? draft : null;
+    } catch { return null; }
+  }
+
+  function saveProfileDraft(name, studentId, college, storage) {
+    const draft = {name:String(name).trim(), studentId:String(studentId).trim(), college:String(college ?? '').trim()};
+    (storage || localStorage).setItem(PROFILE_DRAFT_KEY, JSON.stringify(draft));
+    return draft;
   }
 
   function normalize(value) {
@@ -287,6 +302,7 @@
   }
 
   function fillBasicInformation(profile, root = document) {
+    if (!/^[0-9]{8}$/.test(profile.studentId)) throw new Error('学号必须为8位数字');
     const field = basicInformationField(root);
     if (!field) return false;
     // 以下控件来自当前问卷的基本信息区域，避免触碰考试题内的输入框。
@@ -379,7 +395,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.0';
+  const SCRIPT_VERSION = '1.2.1';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -397,7 +413,7 @@
       *{box-sizing:border-box}.card{display:flex;flex-direction:column;max-height:calc(100dvh - 16px);background:#fff;border:1px solid #dce2ee;border-radius:13px;box-shadow:0 5px 24px #25365424;overflow:hidden}
       header{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;padding:9px 12px;background:#f3f5ff;cursor:move;touch-action:none;user-select:none}
       strong{font-size:14px}.script-version{display:block;font-size:11px;color:#6a7588;line-height:1.4}button{font:inherit;cursor:pointer;border:0;border-radius:7px;padding:6px 10px;background:#eef1f7;color:#263249}
-      #fold{padding:1px 7px;background:transparent;font-size:19px}.body{min-height:0;padding:10px 12px;max-height:660px;overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}
+      #fold{padding:1px 7px;background:transparent;font-size:19px}.body{min-height:0;padding:10px 12px;max-height:660px;overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}.notice{color:#d92d20}
       #status{margin:6px 0;white-space:pre-line}.actions{display:flex;gap:7px;margin-top:8px}.profile-actions button{flex:1;padding:6px 4px;white-space:nowrap}#start{background:#5965da;color:white}
       details{margin-top:7px}summary{cursor:pointer;color:#5865c9}ol{padding-left:22px;margin:5px 0;max-height:140px;overflow:auto;font-size:12px}
       .body::-webkit-scrollbar,ol::-webkit-scrollbar{width:6px;height:6px}
@@ -413,7 +429,7 @@
       .folded .body,.folded footer{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
     </style>
     <section class="card"><header><div><strong>学生手册正式考试助手</strong><span class="script-version">v${SCRIPT_VERSION}</span></div><button id="fold" type="button" aria-label="收起或展开">−</button></header>
-      <div class="body"><div class="muted">参考题库非官方答案</div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
+      <div class="body"><div class="muted notice">参考题库非官方答案</div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
       <div class="actions"><button id="update-bank" type="button">检查题库更新</button></div>
       <div class="muted" id="bank-version"></div><div class="muted" id="bank-message" role="status" aria-live="polite"></div>
       <label>未匹配或待确认题<select id="fallback-mode"><option value="skip">跳过，留待人工检查（默认）</option><option value="guess">单选随机 / 多选全选</option></select></label>
@@ -428,8 +444,10 @@
   document.documentElement.appendChild(host);
 
   let activeProfile = loadProfile();
-  let auto = Boolean(activeProfile?.college);
-  let needsReload = Boolean(activeProfile && !activeProfile.college);
+  const draftProfile = loadProfileDraft();
+  const initialProfile = draftProfile || activeProfile;
+  let auto = Boolean(!draftProfile && activeProfile?.college && /^[0-9]{8}$/.test(activeProfile.studentId));
+  let needsReload = Boolean(initialProfile && !auto);
   let profileReady = false;
   let profileMessage = '';
   let busy = false;
@@ -450,11 +468,11 @@
   let fallbackMode = loadFallbackMode();
   fallbackSetting.value = fallbackMode;
   protectSettingsKeyboard([nameSetting,idSetting,collegeSetting,fallbackSetting]);
-  nameSetting.value = activeProfile?.name || '';
-  idSetting.value = activeProfile?.studentId || '';
-  let selectedCollege = activeProfile?.college || '';
+  nameSetting.value = initialProfile?.name || '';
+  idSetting.value = initialProfile?.studentId || '';
+  let selectedCollege = initialProfile?.college || '';
   let lastCollegeOptions = '';
-  panel.getElementById('settings').open = !activeProfile?.college;
+  panel.getElementById('settings').open = !auto;
 
   function syncCollegeOptions() {
     const options = readCollegeOptions();
@@ -582,7 +600,7 @@
           if (result.status === 'skip') { completed.delete(field); results.delete(field); }
         }
       }
-      bankCooldownUntil = Date.now() + 5000;
+      bankCooldownUntil = Date.now() + 20000;
       const tick = () => {
         renderStatus();
         if (Date.now() < bankCooldownUntil) setTimeout(tick, 1000);
@@ -626,22 +644,23 @@
     generation++;
     needsReload = true;
     try {
-      if (!readCollegeOptions().some(option => option.textContent.trim() === collegeSetting.value)) {
-        throw new Error('请从当前问卷的学院列表中选择学院；若列表未加载，请稍后重试');
-      }
-      activeProfile = saveProfile(nameSetting.value, idSetting.value, collegeSetting.value);
-      nameSetting.value = activeProfile.name;
-      idSetting.value = activeProfile.studentId;
-      selectedCollege = activeProfile.college;
-      profileMessage = begin ? '正在刷新并开始填写…' : '信息已临时保存。';
       if (begin) {
+        if (!readCollegeOptions().some(option => option.textContent.trim() === collegeSetting.value)) {
+          throw new Error('请从当前问卷的学院列表中选择学院；若列表未加载，请稍后重试');
+        }
+        activeProfile = saveProfile(nameSetting.value, idSetting.value, collegeSetting.value);
+        localStorage.removeItem(PROFILE_DRAFT_KEY);
+        profileMessage = '正在刷新并开始填写…';
         reloading = true;
         renderStatus();
         location.reload();
+      } else {
+        saveProfileDraft(nameSetting.value, idSetting.value, collegeSetting.value);
+        profileMessage = '信息已临时保存。';
       }
     } catch (error) {
       reloading = false;
-      profileMessage = `保存失败：${error.message}`;
+      profileMessage = `${begin ? '无法开始' : '临时信息未能保留'}：${error.message}`;
       panel.getElementById('settings').open = true;
     }
     renderStatus();
