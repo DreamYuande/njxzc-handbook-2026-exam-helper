@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.1.2
+// @version      1.1.3
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。保存基本信息后刷新自动填写；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动从GitHub更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -393,17 +393,17 @@
   panel.innerHTML = `
     <style>
       :host{all:initial;font:13px/1.6 -apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif;color:#263249}
-      *{box-sizing:border-box}.card{background:#fff;border:1px solid #dce2ee;border-radius:13px;box-shadow:0 5px 24px #25365424;overflow:hidden}
-      header{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#f3f5ff;cursor:move;touch-action:none;user-select:none}
+      *{box-sizing:border-box}.card{display:flex;flex-direction:column;max-height:calc(100dvh - 16px);background:#fff;border:1px solid #dce2ee;border-radius:13px;box-shadow:0 5px 24px #25365424;overflow:hidden}
+      header{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;padding:9px 12px;background:#f3f5ff;cursor:move;touch-action:none;user-select:none}
       strong{font-size:14px}button{font:inherit;cursor:pointer;border:0;border-radius:7px;padding:6px 10px;background:#eef1f7;color:#263249}
-      #fold{padding:1px 7px;background:transparent;font-size:19px}.body{padding:10px 12px;max-height:min(660px,calc(100dvh - 96px));overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}
+      #fold{padding:1px 7px;background:transparent;font-size:19px}.body{min-height:0;padding:10px 12px;max-height:660px;overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}
       #status{margin:6px 0;white-space:pre-line}.actions{display:flex;gap:7px;margin-top:8px}#toggle{background:#5965da;color:white}
       details{margin-top:7px}summary{cursor:pointer;color:#5865c9}ol{padding-left:22px;margin:5px 0;max-height:140px;overflow:auto;font-size:12px}
       label{display:block;margin:6px 0}input,select{display:block;width:100%;font:inherit;padding:5px 7px;border:1px solid #dce2ee;border-radius:6px;color:#263249;background:#fff}select:disabled{background:#f3f5f8}
       #save{width:100%;margin:4px 0;background:#5965da;color:#fff}button:disabled{opacity:.5;cursor:default}#profile-message{margin-top:6px;color:#6a7588;font-size:12px}
-      footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px solid #edf0f5;color:#6a7588;font-size:11px}
+      footer{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid #edf0f5;color:#6a7588;font-size:11px}
       footer a{display:inline-flex;align-items:center;gap:4px;color:#5965da;text-decoration:none;min-height:28px}footer a:hover{text-decoration:underline}footer svg{fill:currentColor;flex-shrink:0}
-      .folded .body{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
+      .folded .body,.folded footer{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
     </style>
     <section class="card"><header><strong>学生手册正式考试助手</strong><button id="fold" type="button" aria-label="收起或展开">−</button></header>
       <div class="body"><div class="muted">仅限本页正式考试 · 参考题库非官方答案</div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
@@ -416,9 +416,9 @@
         <label>姓名<input id="profile-name" type="text" autocomplete="off" placeholder="填写姓名"></label>
         <label>学院<select id="profile-college"><option value="">等待问卷学院列表加载…</option></select></label>
         <label>学号<input id="profile-student-id" type="text" inputmode="numeric" autocomplete="off" placeholder="填写学号"></label>
-        <button id="save" type="button">保存信息</button></details><div id="profile-message"></div>
+        <button id="save" type="button">保存信息</button></details><div id="profile-message"></div></div>
       <footer><span>© 2026 DreamYuande</span><a href="https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 GitHub 项目主页"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg><span>GitHub</span></a></footer>
-      </div></section>`;
+      </section>`;
   document.documentElement.appendChild(host);
 
   let activeProfile = loadProfile();
