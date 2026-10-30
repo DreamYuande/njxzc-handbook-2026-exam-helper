@@ -48,6 +48,23 @@ test('temporary hardship subsidy maximum maps to 4000 yuan even with shuffled op
   }
 });
 
+test('reviewed scholarship, discipline and withdrawal answers remain correct with reversed options', () => {
+  const api=fresh();
+  const expected=new Map([
+    [116,'A'], [205,'C'], [51,'C'], [267,'AB'],
+    [226,'BD'], [284,'ABCDE'], [287,'ABD'], [298,'ABCD']
+  ]);
+  for(const [id,answer] of expected) {
+    const question=published.questions.find(item=>item.id===id);
+    assert.equal(question.answer,answer,`bank item ${id}`);
+    const options=[...question.options].reverse();
+    const plan=api.planQuestion(question.question,question.type,options);
+    assert.equal(plan.status,'ready',`bank item ${id}`);
+    const texts=[...answer].map(c=>question.options[c.charCodeAt(0)-65]).sort();
+    assert.deepEqual(Array.from(plan.indices,i=>options[i]).sort(),texts,`bank item ${id}`);
+  }
+});
+
 test('all answered records map correctly across three option orders; unknown answers stay skipped', () => {
   const api = fresh();
   let answered=0, skipped=0;

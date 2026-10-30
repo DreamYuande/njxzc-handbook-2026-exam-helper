@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "dataset": "njxzc-handbook-2026",
-  "version": "2026.10.30.2",
+  "version": "2026.10.30.3",
   "updatedAt": "2026-10-30",
   "questions": [
     {
@@ -3411,7 +3411,7 @@
         "未经批准连续两周未参加学校规定的教学活动，且无正当理由的",
         "超过学校规定期限未注册而又未履行暂缓注册手续的"
       ],
-      "answer": "ABCDE"
+      "answer": "ABCD"
     },
     {
       "id": 299,
