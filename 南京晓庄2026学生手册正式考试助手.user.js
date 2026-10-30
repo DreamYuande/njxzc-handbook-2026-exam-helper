@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.3
+// @version      1.2.4
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -406,7 +406,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.3';
+  const SCRIPT_VERSION = '1.2.4';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -462,6 +462,7 @@
   let auto = Boolean(startRequested && !draftProfile);
   let needsReload = Boolean(initialProfile && !auto);
   let profileReady = false;
+  let fillingComplete = false;
   let profileMessage = '';
   let busy = false;
   let updatingBank = false;
@@ -531,7 +532,8 @@
     const issues = values.filter(r => r.status !== 'done' || r.fallback);
     const cooldown = Math.max(0, Math.ceil((bankCooldownUntil - Date.now()) / 1000));
     const startReady = canStart();
-    const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,startReady,issues.map(r => [r.number,r.reason])]);
+    const complete = fillingComplete && auto && !busy && !needsReload;
+    const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,startReady,complete,issues.map(r => [r.number,r.reason])]);
     if (signature === lastRender) return;
     lastRender = signature;
     status.textContent = `${auto ? '自动模式' : '等待开始'}\n题库 ${done-fallback} 题，随机/全选 ${fallback} 题\n未处理 ${errors} 题`;
@@ -543,7 +545,15 @@
     updateBank.textContent = updatingBank ? '正在检查…' : cooldown > 0 ? `当前已是最新(${cooldown})` : '检查题库更新';
     panel.getElementById('bank-version').textContent = `题库 ${bankState.bank.version} · ${bankState.bank.questions.length}题 · ${bankState.source}`;
     panel.getElementById('bank-message').textContent = bankMessage;
-    panel.getElementById('profile-message').textContent = profileMessage;
+    const message = panel.getElementById('profile-message');
+    if (complete) {
+      const reminder = document.createElement('strong');
+      reminder.className = 'notice';
+      reminder.textContent = '（请勿过早提交以免被判异常）';
+      message.replaceChildren(document.createTextNode('相关内容自动填写完毕，请自行检查并提交，'), reminder);
+    } else {
+      message.textContent = profileMessage;
+    }
     panel.getElementById('summary').textContent = `待确认及异常（${issues.length}）`;
     const list = panel.getElementById('issues');
     list.replaceChildren(...issues.map(item => {
@@ -558,12 +568,14 @@
     syncCollegeOptions();
     if (!auto || busy || !activeProfile || needsReload) return;
     busy = true;
+    fillingComplete = false;
+    renderStatus();
     const thisGeneration = generation;
     try {
       if (!profileReady) {
         try {
           profileReady = fillBasicInformation(activeProfile);
-          profileMessage = profileReady ? '基本信息已填写，答题后请自行检查并提交。' : '等待基本信息区域加载…';
+          profileMessage = profileReady ? '' : '等待基本信息区域加载…';
           if (!profileReady) return;
         } catch (error) {
           auto = false;
@@ -598,6 +610,9 @@
           break;
         }
       }
+      const visibleQuestions = fields.filter(field => TYPES.has(field.getAttribute('type')) && field.getClientRects().length);
+      fillingComplete = auto && generation === thisGeneration && visibleQuestions.length > 0 &&
+        visibleQuestions.every(field => results.get(field)?.status === 'done');
     } finally {
       busy = false;
       renderStatus();
