@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.2
+// @version      1.2.3
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
@@ -406,7 +406,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.2';
+  const SCRIPT_VERSION = '1.2.3';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -440,7 +440,7 @@
       .folded .body,.folded footer{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
     </style>
     <section class="card"><header><div><strong>学生手册正式考试助手</strong><span class="script-version">v${SCRIPT_VERSION}</span></div><button id="fold" type="button" aria-label="收起或展开">−</button></header>
-      <div class="body"><div class="muted notice">参考题库非官方答案，<span>不作为本脚本质量</span></div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
+      <div class="body"><div class="muted notice">参考题库非官方答案 · <span>酌情参考</span></div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
       <div class="actions"><button id="update-bank" type="button">检查题库更新</button></div>
       <div class="muted" id="bank-version"></div><div class="muted" id="bank-message" role="status" aria-live="polite"></div>
       <label>未匹配或待确认题<select id="fallback-mode"><option value="skip">跳过，留待人工检查（默认）</option><option value="guess">单选随机 / 多选全选</option></select></label>
