@@ -4,8 +4,8 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.2.1
-// @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。支持临时保存基本信息，点击开始填写后保存并自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
+// @version      1.2.2
+// @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -29,6 +29,7 @@
   // 与模拟版共用基本信息；正式版设置和浮窗使用独立标识。
   const PROFILE_KEY = 'njxzc.handbook.profile.v1';
   const PROFILE_DRAFT_KEY = 'njxzc.handbook.formal.profile-draft.v1';
+  const START_REQUEST_KEY = 'njxzc.handbook.formal.start.v1';
   const FALLBACK_KEY = 'njxzc.handbook.formal.fallback.v1';
   const BANK_CACHE_KEY = 'njxzc.handbook.formal.bank.v1';
   const BANK_URL = 'https://raw.githubusercontent.com/DreamYuande/njxzc-handbook-2026-exam-helper/main/question-bank.json';
@@ -204,6 +205,16 @@
     const draft = {name:String(name).trim(), studentId:String(studentId).trim(), college:String(college ?? '').trim()};
     (storage || localStorage).setItem(PROFILE_DRAFT_KEY, JSON.stringify(draft));
     return draft;
+  }
+
+  function consumeStartRequest(profile, storage) {
+    try {
+      const store = storage || sessionStorage;
+      const request = store.getItem(START_REQUEST_KEY);
+      store.removeItem(START_REQUEST_KEY);
+      return Boolean(profile?.name && profile?.college && /^[0-9]{8}$/.test(profile.studentId) &&
+        request === JSON.stringify(profile));
+    } catch { return false; }
   }
 
   function normalize(value) {
@@ -395,7 +406,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.2.1';
+  const SCRIPT_VERSION = '1.2.2';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -413,7 +424,7 @@
       *{box-sizing:border-box}.card{display:flex;flex-direction:column;max-height:calc(100dvh - 16px);background:#fff;border:1px solid #dce2ee;border-radius:13px;box-shadow:0 5px 24px #25365424;overflow:hidden}
       header{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;padding:9px 12px;background:#f3f5ff;cursor:move;touch-action:none;user-select:none}
       strong{font-size:14px}.script-version{display:block;font-size:11px;color:#6a7588;line-height:1.4}button{font:inherit;cursor:pointer;border:0;border-radius:7px;padding:6px 10px;background:#eef1f7;color:#263249}
-      #fold{padding:1px 7px;background:transparent;font-size:19px}.body{min-height:0;padding:10px 12px;max-height:660px;overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}.notice{color:#d92d20}
+      #fold{padding:1px 7px;background:transparent;font-size:19px}.body{min-height:0;padding:10px 12px;max-height:660px;overflow-y:auto;overscroll-behavior:contain}.muted{color:#6a7588;font-size:12px}.notice{color:#d92d20;font-weight:700}.notice span{display:inline-block}
       #status{margin:6px 0;white-space:pre-line}.actions{display:flex;gap:7px;margin-top:8px}.profile-actions button{flex:1;padding:6px 4px;white-space:nowrap}#start{background:#5965da;color:white}
       details{margin-top:7px}summary{cursor:pointer;color:#5865c9}ol{padding-left:22px;margin:5px 0;max-height:140px;overflow:auto;font-size:12px}
       .body::-webkit-scrollbar,ol::-webkit-scrollbar{width:6px;height:6px}
@@ -429,7 +440,7 @@
       .folded .body,.folded footer{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
     </style>
     <section class="card"><header><div><strong>学生手册正式考试助手</strong><span class="script-version">v${SCRIPT_VERSION}</span></div><button id="fold" type="button" aria-label="收起或展开">−</button></header>
-      <div class="body"><div class="muted notice">参考题库非官方答案</div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
+      <div class="body"><div class="muted notice">参考题库非官方答案，<span>不作为本脚本质量</span></div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
       <div class="actions"><button id="update-bank" type="button">检查题库更新</button></div>
       <div class="muted" id="bank-version"></div><div class="muted" id="bank-message" role="status" aria-live="polite"></div>
       <label>未匹配或待确认题<select id="fallback-mode"><option value="skip">跳过，留待人工检查（默认）</option><option value="guess">单选随机 / 多选全选</option></select></label>
@@ -446,7 +457,9 @@
   let activeProfile = loadProfile();
   const draftProfile = loadProfileDraft();
   const initialProfile = draftProfile || activeProfile;
-  let auto = Boolean(!draftProfile && activeProfile?.college && /^[0-9]{8}$/.test(activeProfile.studentId));
+  let savedDraft = draftProfile;
+  const startRequested = consumeStartRequest(activeProfile);
+  let auto = Boolean(startRequested && !draftProfile);
   let needsReload = Boolean(initialProfile && !auto);
   let profileReady = false;
   let profileMessage = '';
@@ -503,6 +516,11 @@
   const results = new Map();
   let lastRender = '';
 
+  function canStart() {
+    return Boolean(savedDraft && savedDraft.name === nameSetting.value.trim() &&
+      savedDraft.studentId === idSetting.value.trim() && savedDraft.college === collegeSetting.value.trim());
+  }
+
   function renderStatus() {
     const live = new Set(document.querySelectorAll('.field'));
     for (const field of results.keys()) if (!live.has(field)) results.delete(field);
@@ -512,12 +530,14 @@
     const errors = values.filter(r => r.status !== 'done').length;
     const issues = values.filter(r => r.status !== 'done' || r.fallback);
     const cooldown = Math.max(0, Math.ceil((bankCooldownUntil - Date.now()) / 1000));
-    const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,issues.map(r => [r.number,r.reason])]);
+    const startReady = canStart();
+    const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,startReady,issues.map(r => [r.number,r.reason])]);
     if (signature === lastRender) return;
     lastRender = signature;
     status.textContent = `${auto ? '自动模式' : '等待开始'}\n题库 ${done-fallback} 题，随机/全选 ${fallback} 题\n未处理 ${errors} 题`;
     save.disabled = updatingBank || reloading;
-    start.disabled = updatingBank || reloading;
+    start.disabled = updatingBank || reloading || !startReady;
+    start.title = startReady ? '' : '请先临时保存当前信息';
     start.textContent = reloading ? '正在开始…' : '开始填写';
     updateBank.disabled = updatingBank || cooldown > 0 || reloading;
     updateBank.textContent = updatingBank ? '正在检查…' : cooldown > 0 ? `当前已是最新(${cooldown})` : '检查题库更新';
@@ -629,6 +649,7 @@
   });
 
   function profileChanged() {
+    savedDraft = null;
     selectedCollege = collegeSetting.value;
     auto = false;
     generation++;
@@ -640,6 +661,11 @@
   collegeSetting.addEventListener('change', profileChanged);
   function persistProfile(begin) {
     if (updatingBank || reloading) return;
+    if (begin && !canStart()) {
+      profileMessage = '请先临时保存当前信息。';
+      renderStatus();
+      return;
+    }
     auto = false;
     generation++;
     needsReload = true;
@@ -649,13 +675,15 @@
           throw new Error('请从当前问卷的学院列表中选择学院；若列表未加载，请稍后重试');
         }
         activeProfile = saveProfile(nameSetting.value, idSetting.value, collegeSetting.value);
+        sessionStorage.setItem(START_REQUEST_KEY, JSON.stringify(activeProfile));
         localStorage.removeItem(PROFILE_DRAFT_KEY);
         profileMessage = '正在刷新并开始填写…';
         reloading = true;
         renderStatus();
         location.reload();
       } else {
-        saveProfileDraft(nameSetting.value, idSetting.value, collegeSetting.value);
+        savedDraft = null;
+        savedDraft = saveProfileDraft(nameSetting.value, idSetting.value, collegeSetting.value);
         profileMessage = '信息已临时保存。';
       }
     } catch (error) {

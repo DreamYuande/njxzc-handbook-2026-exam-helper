@@ -7,12 +7,12 @@ const source = fs.readFileSync(path.join(__dirname, '..', '南京晓庄2026学�
 const context = vm.createContext({URL, setTimeout, clearTimeout});
 vm.runInContext(source.split('// __TEST_EXPORT_POINT__')[0] + `
   globalThis.api = {PROFILE_KEY, PROFILE_DRAFT_KEY, saveProfile, loadProfile,
-    saveProfileDraft, loadProfileDraft, fillBasicInformation};})();`, context);
+    saveProfileDraft, loadProfileDraft, fillBasicInformation, START_REQUEST_KEY, consumeStartRequest};})();`, context);
 const api = context.api;
 const plain = value => JSON.parse(JSON.stringify(value));
 function storage() {
   const values = new Map();
-  return {getItem:key => values.get(key) ?? null, setItem:(key,value) => values.set(key,value)};
+  return {getItem:key => values.get(key) ?? null, setItem:(key,value) => values.set(key,value), removeItem:key => values.delete(key)};
 }
 
 test('temporary drafts accept empty or incomplete values and survive reopening without replacing the active profile', () => {
@@ -54,4 +54,19 @@ test('unreadable or malformed drafts are ignored and draft storage failure is re
   assert.equal(api.loadProfileDraft({getItem(){return '{invalid';}}),null);
   assert.equal(api.loadProfileDraft({getItem(){return '{"name":"only name"}';}}),null);
   assert.throws(()=>api.saveProfileDraft('','','',{setItem(){throw Error('blocked');}}),/blocked/);
+});
+
+test('only an explicit matching start request allows one automatic run after refresh', () => {
+  const store = storage();
+  const profile = {name:'姓名', studentId:'26000001', college:'学院'};
+  assert.equal(api.consumeStartRequest(profile,store),false);
+  store.setItem(api.START_REQUEST_KEY,JSON.stringify(profile));
+  assert.equal(api.consumeStartRequest(profile,store),true);
+  assert.equal(api.consumeStartRequest(profile,store),false);
+  store.setItem(api.START_REQUEST_KEY,JSON.stringify(profile));
+  assert.equal(api.consumeStartRequest({...profile,studentId:'26000002'},store),false);
+  assert.equal(store.getItem(api.START_REQUEST_KEY),null);
+  store.setItem(api.START_REQUEST_KEY,JSON.stringify({...profile,studentId:'bad'}));
+  assert.equal(api.consumeStartRequest({...profile,studentId:'bad'},store),false);
+  assert.equal(api.consumeStartRequest(profile,{getItem(){throw Error('blocked');}}),false);
 });
