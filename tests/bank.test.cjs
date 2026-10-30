@@ -137,13 +137,15 @@ test('startup uses validated newer cache and safely ignores missing, corrupt or 
   assert.equal(api.readBankCache(()=>{throw Error('no storage');}).source,'内置');
 });
 
-test('download only requests the fixed GitHub JSON, without cookies or answer/profile payload', async () => {
+test('download only requests the fixed proxy JSON, without cookies or answer/profile payload', async () => {
   const api=fresh();let options;
   const result=await api.downloadBank(details=>{
     options=details;
     details.onload({status:200,finalUrl:api.BANK_URL,responseText:JSON.stringify(newer())});
     return {abort(){}};
   });
+  assert.equal(api.BANK_URL,'https://gh-proxy.com/https://raw.githubusercontent.com/DreamYuande/njxzc-handbook-2026-exam-helper/refs/heads/main/question-bank.json');
+  assert.deepEqual([...source.matchAll(/^\/\/ @connect\s+(\S+)/gm)].map(match=>match[1]),['gh-proxy.com']);
   assert.equal(options.method,'GET');assert.equal(options.anonymous,true);
   assert.equal(options.data,undefined);
   const url=new URL(options.url);
