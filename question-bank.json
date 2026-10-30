@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "dataset": "njxzc-handbook-2026",
-  "version": "2026.10.30.4",
+  "version": "2026.10.30.5",
   "updatedAt": "2026-10-30",
   "questions": [
     {
@@ -3063,7 +3063,7 @@
         "前10%-30%，且有国家级奖励",
         "前30%"
       ],
-      "answer": null
+      "answer": "AB"
     },
     {
       "id": 270,
