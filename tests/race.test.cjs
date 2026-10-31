@@ -60,3 +60,33 @@ test('cancelling a race prevents pending questions from being clicked', async ()
   assert.equal(await context.applyPlan(data,{indices:[0]},() => false,true),false);
   assert.equal(clicks,0);
 });
+
+test('initialization waits for the native option row to become usable before proceeding', async () => {
+  let ready=false,clicks=0;
+  const input={type:'checkbox',checked:false,disabled:false};
+  const option={input,row:{click(){clicks++;if(ready)input.checked=!input.checked;}},
+    control:{classList:{contains:() => false},click(){assert.fail('inner icon must not be clicked');}}};
+  setTimeout(() => {ready=true;},60);
+  assert.equal(await context.applyPlan({type:'4',options:[option]},{indices:[0]},() => true,true,true),true);
+  assert.equal(input.checked,true);
+  assert.equal(clicks,2);
+});
+
+test('a delayed checkbox state change is observed before any initialization retry can reverse it', async () => {
+  let clicks=0;
+  const input={type:'checkbox',checked:false,disabled:false};
+  const option={input,row:{click(){clicks++;setTimeout(() => {input.checked=!input.checked;},30);}},
+    control:{classList:{contains:() => false}}};
+  assert.equal(await context.applyPlan({type:'4',options:[option]},{indices:[0]},() => true,true,true),true);
+  assert.equal(input.checked,true);
+  assert.equal(clicks,1);
+});
+
+test('cancelling during initialization stops further clicks without producing another timeout error', async () => {
+  let running=true,clicks=0;
+  const input={type:'radio',checked:false,disabled:false};
+  const option={input,row:{click(){clicks++;}},control:{classList:{contains:() => false}}};
+  setTimeout(() => {running=false;},20);
+  assert.equal(await context.applyPlan({type:'3',options:[option]},{indices:[0]},() => running,true,true),false);
+  assert.equal(clicks,1);
+});

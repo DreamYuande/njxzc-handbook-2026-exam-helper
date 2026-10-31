@@ -4,7 +4,7 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.4.1
+// @version      1.4.2
 // @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。标准模式不刷新、默认跳过待确认题；竞速模式刷新后立即并行填写，从页面加载开始计时（最低2秒），默认随机/全选兜底，到时检查并点击一次提交，可取消。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-end
@@ -471,21 +471,31 @@
 
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-  async function applyPlan(data, plan, keepGoing, fast = false) {
+  async function applyPlan(data, plan, keepGoing, fast = false, waitForInitialization = false) {
     const desired = new Set(plan.indices);
     const expectedType = data.type === '3' ? 'radio' : 'checkbox';
     if (data.options.some(o => !o.input || !o.control || o.input.disabled ||
       o.input.type !== expectedType)) throw new Error('选项控件不完整或已禁用');
 
+    let initializing = waitForInitialization;
     async function clickOption(i, targetState) {
       if (!keepGoing()) return false;
       if (isSelected(data.options[i]) === targetState) return true;
-      // 使用页面本身的点击事件，使问卷星同步实际答案和界面。
-      data.options[i].control.click();
-      if (fast && isSelected(data.options[i]) === targetState) return true;
-      for (let attempt = 0; attempt < (fast ? 20 : 5); attempt++) {
-        await delay(fast ? 10 : 40);
-        if (isSelected(data.options[i]) === targetState) return true;
+      // 问卷星将选择处理器绑定在选项行，图标可能嵌套在独立包装层内。
+      const target = typeof data.options[i].row?.click === 'function' ? data.options[i].row : data.options[i].control;
+      target.click();
+      if (fast && isSelected(data.options[i]) === targetState) { initializing = false; return true; }
+      const interval = fast ? 10 : 40;
+      const attempts = Math.ceil((initializing ? 5000 : 600) / interval);
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        await delay(interval);
+        if (!keepGoing()) return false;
+        if (isSelected(data.options[i]) === targetState) { initializing = false; return true; }
+        // 仅首个需要改变答案的题用于确认初始化；重试前重新检查，避免反选。
+        if (initializing && (attempt + 1) % Math.ceil(120 / interval) === 0) {
+          target.click();
+          if (isSelected(data.options[i]) === targetState) { initializing = false; return true; }
+        }
       }
       throw new Error('点击后未能确认选中状态，已暂停');
     }
@@ -543,7 +553,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.4.1';
+  const SCRIPT_VERSION = '1.4.2';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -792,14 +802,20 @@
         }
       }
       const fields = [...document.querySelectorAll('.field')];
-      const processField = async field => {
-        if (!auto || generation !== thisGeneration) return;
-        if (!TYPES.has(field.getAttribute('type')) || !field.getClientRects().length) return;
+      const prepared = fields.flatMap(field => {
+        if (!TYPES.has(field.getAttribute('type')) || !field.getClientRects().length) return [];
         const data = readField(field);
-        if (!data) return;
+        if (!data) return [];
         const fingerprint = JSON.stringify([data.type, data.question, data.options.map(o => o.text)]);
-        if (completed.get(field) === fingerprint) return;
+        if (completed.get(field) === fingerprint) return [];
         const plan = resolvePlan(data.question, data.type, data.options.map(o => o.text), fallbackMode);
+        return [{field,data,fingerprint,plan}];
+      });
+      const probe = prepared.find(({data,plan}) => plan.status === 'ready' &&
+        data.options.some((option,i) => isSelected(option) !== plan.indices.includes(i)));
+      const processField = async entry => {
+        const {field,data,fingerprint,plan} = entry;
+        if (!auto || generation !== thisGeneration) return;
         if (plan.status !== 'ready') {
           results.set(field, {...data, ...plan});
           completed.set(field, fingerprint);
@@ -807,7 +823,7 @@
         }
         try {
           const finished = await applyPlan(data, plan,
-            () => auto && generation === thisGeneration && field.isConnected, mode === 'race');
+            () => auto && generation === thisGeneration && field.isConnected, mode === 'race', entry === probe);
           if (!finished || !auto || generation !== thisGeneration) return;
           results.set(field, {number:data.number, question:data.question, status:'done', fallback:Boolean(plan.fallback), reason:plan.reason});
           completed.set(field, fingerprint);
@@ -818,10 +834,13 @@
         }
       };
       if (mode === 'race') {
-        // 不同题目并行；每一道题内仍按原有顺序点击和校验，避免多选反选。
-        await Promise.all(fields.map(processField));
+        // 先确认页面处理器已可用，再并行其他题；同一道题内仍保持顺序。
+        if (probe) await processField(probe);
+        if (auto && generation === thisGeneration) {
+          await Promise.all(prepared.filter(entry => entry !== probe).map(processField));
+        }
       } else {
-        for (const field of fields) await processField(field);
+        for (const entry of prepared) await processField(entry);
       }
       const visibleQuestions = fields.filter(field => TYPES.has(field.getAttribute('type')) && field.getClientRects().length);
       fillingComplete = auto && generation === thisGeneration && visibleQuestions.length > 0 &&
