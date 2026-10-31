@@ -4,10 +4,10 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.4.0
-// @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。标准模式保存后直接填写、不刷新；竞速模式刷新后并行填写，填完至少2秒后自动点击提交，可取消；自带题库并支持手动检查更新。
+// @version      1.4.1
+// @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。标准模式不刷新、默认跳过待确认题；竞速模式刷新后立即并行填写，从页面加载开始计时（最低2秒），默认随机/全选兜底，到时检查并点击一次提交，可取消。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
-// @run-at       document-idle
+// @run-at       document-end
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -174,9 +174,16 @@
     } catch { return false; }
   }
 
-  function loadFallbackMode() {
-    try { return localStorage.getItem(FALLBACK_KEY) === 'guess' ? 'guess' : 'skip'; }
-    catch { return 'skip'; }
+  function fallbackKeyForMode(mode) {
+    return FALLBACK_KEY + (mode === 'race' ? '.race' : '.standard');
+  }
+
+  function loadFallbackMode(mode = 'standard', storage) {
+    const fallback = mode === 'race' ? 'guess' : 'skip';
+    try {
+      const value = (storage || localStorage).getItem(fallbackKeyForMode(mode));
+      return value === 'skip' || value === 'guess' ? value : fallback;
+    } catch { return fallback; }
   }
 
   function loadProfile(storage) {
@@ -476,8 +483,8 @@
       // 使用页面本身的点击事件，使问卷星同步实际答案和界面。
       data.options[i].control.click();
       if (fast && isSelected(data.options[i]) === targetState) return true;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        await delay(40);
+      for (let attempt = 0; attempt < (fast ? 20 : 5); attempt++) {
+        await delay(fast ? 10 : 40);
         if (isSelected(data.options[i]) === targetState) return true;
       }
       throw new Error('点击后未能确认选中状态，已暂停');
@@ -536,7 +543,7 @@
   }
 
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.4.0';
+  const SCRIPT_VERSION = '1.4.1';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -573,10 +580,10 @@
     </style>
     <section class="card"><header><div><strong>学生手册正式考试助手</strong><span class="script-version">v${SCRIPT_VERSION}</span></div><button id="fold" type="button" aria-label="收起或展开">−</button></header>
       <div class="mode-area"><div class="mode-switch" data-mode="standard" role="radiogroup" aria-label="填写模式"><span class="mode-thumb" aria-hidden="true"></span><input id="mode-standard" type="radio" name="run-mode" value="standard" checked><label for="mode-standard">标准模式</label><input id="mode-race" type="radio" name="run-mode" value="race"><label for="mode-race">竞速模式</label></div></div>
-      <div class="body"><div class="muted notice">参考题库非官方答案 · <span>酌情参考</span></div><div class="muted" id="mode-hint"></div><div id="race-settings" hidden><label>填完后自动提交（秒）<input id="submit-seconds" type="number" min="2" step="1" value="2" inputmode="numeric"></label><div id="submission-status" role="status" aria-live="polite"></div><button id="cancel-submit" type="button" hidden>取消自动提交</button></div><div id="status">准备中…</div>
+      <div class="body"><div class="muted notice">参考题库非官方答案 · <span>酌情参考</span></div><div class="muted" id="mode-hint"></div><div id="race-settings" hidden><label>页面加载起计时（秒）<input id="submit-seconds" type="number" min="2" step="1" value="2" inputmode="numeric"></label><div id="submission-status" role="status" aria-live="polite"></div><button id="cancel-submit" type="button" hidden>取消自动提交</button></div><div id="status">准备中…</div>
       <div class="actions"><button id="update-bank" type="button">检查题库更新</button></div>
       <div class="muted" id="bank-version"></div><div class="muted" id="bank-message" role="status" aria-live="polite"></div>
-      <label>未匹配或待确认题<select id="fallback-mode"><option value="skip">跳过，留待人工检查（默认）</option><option value="guess">单选随机 / 多选全选</option></select></label>
+      <label>未匹配或待确认题<select id="fallback-mode"><option value="skip">跳过，留待人工检查</option><option value="guess">单选随机 / 多选全选</option></select></label>
       <details><summary id="summary">待确认及异常详情</summary><ol id="issues"></ol></details>
       <details id="settings"><summary>基本信息设置</summary>
         <label>姓名<input id="profile-name" type="text" autocomplete="off" placeholder="填写姓名"></label>
@@ -626,7 +633,7 @@
   const idSetting = panel.getElementById('profile-student-id');
   const collegeSetting = panel.getElementById('profile-college');
   const fallbackSetting = panel.getElementById('fallback-mode');
-  let fallbackMode = loadFallbackMode();
+  let fallbackMode = loadFallbackMode(mode);
   fallbackSetting.value = fallbackMode;
   protectSettingsKeyboard([nameSetting,idSetting,collegeSetting,fallbackSetting,submitSeconds,standardMode,raceMode]);
   nameSetting.value = initialProfile?.name || '';
@@ -679,28 +686,19 @@
     submissionMessage = message;
   }
 
-  function currentQuestionsComplete() {
-    const fields = [...document.querySelectorAll('.field')].filter(field => TYPES.has(field.getAttribute('type')) && elementVisible(field));
-    return fields.length > 0 && fields.every(field => {
-      const data = readField(field);
-      return data && results.get(field)?.status === 'done' &&
-        completed.get(field) === JSON.stringify([data.type,data.question,data.options.map(option => option.text)]);
-    });
-  }
-
   function startSubmissionCountdown() {
-    if (!submissionArmed || submissionAttempted || mode !== 'race' || !currentQuestionsComplete()) return;
+    if (!submissionArmed || submissionAttempted || mode !== 'race') return;
     if (submissionDeadline) return;
-    submissionDeadline = Date.now() + runSettings.submitSeconds * 1000;
+    // performance.now() 从当前页导航开始计时；脚本启动或填写耗时不延后截止点。
+    submissionDeadline = runSettings.submitSeconds * 1000;
     const tick = () => {
       if (!submissionArmed || submissionAttempted || mode !== 'race') return;
-      if (busy) { submissionTimer = setTimeout(tick,100); return; }
-      const reason = !currentQuestionsComplete() ? '题目已变化或仍未完成' : submissionProblem(activeProfile);
-      if (reason || !auto || needsReload || updatingBank || clearingData) {
-        cancelSubmission((reason || '填写状态已变化') + '，已取消自动提交');
+      if (!auto || needsReload || updatingBank || clearingData) {
+        cancelSubmission('填写状态已变化，已取消自动提交');
         renderStatus(); return;
       }
-      if (Date.now() >= submissionDeadline) {
+      const remaining = submissionDeadline - performance.now();
+      if (remaining <= 0) {
         const problem = submissionProblem(activeProfile,document,true);
         if (problem) { cancelSubmission(problem); renderStatus(); return; }
         submissionAttempted = true;
@@ -712,9 +710,9 @@
         return;
       }
       renderStatus();
-      submissionTimer = setTimeout(tick,100);
+      submissionTimer = setTimeout(tick,Math.min(50,remaining));
     };
-    submissionTimer = setTimeout(tick,100);
+    submissionTimer = setTimeout(tick,Math.max(0,Math.min(50,submissionDeadline-performance.now())));
   }
 
   function renderStatus() {
@@ -727,7 +725,7 @@
     const issues = values.filter(r => r.status !== 'done' || r.fallback);
     const cooldown = Math.max(0, Math.ceil((bankCooldownUntil - Date.now()) / 1000));
     const startReady = canStart();
-    const submitRemaining = submissionDeadline ? Math.max(0,Math.ceil((submissionDeadline-Date.now())/1000)) : 0;
+    const submitRemaining = submissionDeadline ? Math.max(0,Math.ceil((submissionDeadline-performance.now())/1000)) : 0;
     const complete = fillingComplete && auto && !busy && !needsReload;
     const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,clearingData,startReady,complete,mode,submitSeconds.value,submissionArmed,submissionMessage,submitRemaining,busy,issues.map(r => [r.number,r.reason])]);
     if (signature === lastRender) return;
@@ -741,11 +739,11 @@
     raceMode.checked = mode === 'race';
     standardMode.disabled = raceMode.disabled = submitSeconds.disabled = updatingBank || reloading || clearingData;
     panel.querySelector('.mode-switch').dataset.mode = mode;
-    panel.getElementById('mode-hint').textContent = mode === 'race' ? '刷新后快速填写 · 填完后自动提交' : '保存后直接填写 · 检查后自行提交';
+    panel.getElementById('mode-hint').textContent = mode === 'race' ? '加载即计时 · 并行填写 · 到时提交' : '保存后直接填写 · 检查后自行提交';
     panel.getElementById('race-settings').hidden = mode !== 'race';
     cancelSubmit.hidden = !submissionArmed;
     panel.getElementById('submission-status').textContent = submissionMessage ||
-      (submissionArmed ? submissionDeadline ? `${submitRemaining}秒后自动提交` : `填写完成后${runSettings.submitSeconds}秒自动提交` : '至少2秒；点击保存并竞速后生效');
+      (submissionArmed ? `${submitRemaining}秒后自动提交` : '至少2秒，自刷新页加载开始计时');
     updateBank.disabled = updatingBank || cooldown > 0 || reloading || clearingData;
     clearData.disabled = updatingBank || reloading || clearingData;
     clearData.textContent = '清除表单数据';
@@ -830,8 +828,7 @@
         visibleQuestions.every(field => results.get(field)?.status === 'done');
     } finally {
       busy = false;
-      if (submissionArmed && fillingComplete) startSubmissionCountdown();
-      else if (submissionArmed && results.size && [...results.values()].some(result => result.status !== 'done')) {
+      if (submissionArmed && results.size && [...results.values()].some(result => result.status !== 'done')) {
         cancelSubmission('仍有待确认或未完成题目，自动提交未启动');
       }
       renderStatus();
@@ -875,7 +872,7 @@
     if (clearingData) return;
     cancelSubmission(mode === 'race' ? '兜底设置已变化，已取消自动提交' : '');
     fallbackMode = fallbackSetting.value === 'guess' ? 'guess' : 'skip';
-    try { localStorage.setItem(FALLBACK_KEY, fallbackMode); }
+    try { localStorage.setItem(fallbackKeyForMode(mode), fallbackMode); }
     catch { profileMessage = '当前浏览器无法保存兜底设置，本次设置仍然有效。'; }
     // 只重新检查尚未作答的题，不覆盖已完成题或用户的后续修改。
     for (const [field, result] of results) {
@@ -902,6 +899,8 @@
   for (const control of [standardMode,raceMode]) control.addEventListener('change', () => {
     if (!control.checked || updatingBank || reloading || clearingData) return;
     mode = control.value;
+    fallbackMode = loadFallbackMode(mode);
+    fallbackSetting.value = fallbackMode;
     auto = false;
     generation++;
     needsReload = true;
@@ -1064,7 +1063,13 @@
   panelObserver.observe(host);
   // 每个题目只处理一次；手动调整后不会反复被覆盖。
   renderStatus();
-  setTimeout(() => { void scan(); }, auto && mode === 'race' ? 0 : 1000);
+  if (auto && mode === 'race') {
+    void scan();
+    startSubmissionCountdown();
+    renderStatus();
+  } else {
+    setTimeout(() => { void scan(); }, 1000);
+  }
   setInterval(() => { void scan(); }, 900);
 })();
 

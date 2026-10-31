@@ -5,7 +5,21 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname,'..','南京晓庄2026学生手册正式考试助手.user.js'),'utf8');
 const context = vm.createContext({URL,setTimeout,clearTimeout});
-vm.runInContext(source.split('// __TEST_EXPORT_POINT__')[0]+'globalThis.applyPlan=applyPlan;})();',context);
+vm.runInContext(source.split('// __TEST_EXPORT_POINT__')[0]+'globalThis.applyPlan=applyPlan;globalThis.fallback={loadFallbackMode,fallbackKeyForMode,FALLBACK_KEY};})();',context);
+
+test('standard defaults to skip and race defaults to guess, with independent remembered choices', () => {
+  const {loadFallbackMode,fallbackKeyForMode,FALLBACK_KEY}=context.fallback;
+  const values=new Map([[FALLBACK_KEY,'guess']]);
+  const storage={getItem:key => values.get(key) ?? null};
+  assert.equal(loadFallbackMode('standard',storage),'skip');
+  assert.equal(loadFallbackMode('race',storage),'guess');
+  values.set(fallbackKeyForMode('standard'),'guess');
+  values.set(fallbackKeyForMode('race'),'skip');
+  assert.equal(loadFallbackMode('standard',storage),'guess');
+  assert.equal(loadFallbackMode('race',storage),'skip');
+  assert.equal(loadFallbackMode('standard',{getItem(){throw Error('denied');}}),'skip');
+  assert.equal(loadFallbackMode('race',{getItem(){throw Error('denied');}}),'guess');
+});
 
 test('race can fill independent questions concurrently while standard calls remain sequential', async () => {
   async function simulate(parallel) {
