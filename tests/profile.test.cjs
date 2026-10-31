@@ -7,7 +7,8 @@ const source = fs.readFileSync(path.join(__dirname, '..', '南京晓庄2026学�
 const context = vm.createContext({URL, setTimeout, clearTimeout});
 vm.runInContext(source.split('// __TEST_EXPORT_POINT__')[0] + `
   globalThis.api = {PROFILE_KEY, PROFILE_DRAFT_KEY, saveProfile, loadProfile,
-    saveProfileDraft, loadProfileDraft, isSavedProfileReady, fillBasicInformation, START_REQUEST_KEY, consumeStartRequest};})();`, context);
+    saveProfileDraft, loadProfileDraft, isProfileReady, fillBasicInformation, START_REQUEST_KEY, consumeStartRequest,
+    RUN_SETTINGS_KEY, parseSubmitSeconds, loadRunSettings, saveRunSettings};})();`, context);
 const api = context.api;
 const plain = value => JSON.parse(JSON.stringify(value));
 function storage() {
@@ -42,22 +43,18 @@ test('starting accepts only eight ASCII digits, including leading zeroes, before
   assert.throws(()=>api.saveProfile('姓名','26000001','',store),/选择学院/);
 });
 
-test('start requires a complete valid saved draft matching current fields and an available college', () => {
+test('combined save-and-start requires complete valid current fields and an available college', () => {
   const profile = {name:'姓名', studentId:'01234567', college:'学院'};
   const colleges = ['学院'];
-  assert.equal(api.isSavedProfileReady({...profile},profile,colleges),true);
-  assert.equal(api.isSavedProfileReady(null,profile,colleges),false);
+  assert.equal(api.isProfileReady(profile,colleges),true);
+  assert.equal(api.isProfileReady(null,colleges),false);
   for (const current of [
-    {name:'',studentId:'',college:''},
-    {...profile,name:''}, {...profile,college:''},
+    {name:'',studentId:'',college:''}, {...profile,name:' '}, {...profile,college:''},
     {...profile,studentId:'1234567'}, {...profile,studentId:'123456789'},
     {...profile,studentId:'１２３４５６７８'}, {...profile,studentId:'1234x678'}
-  ]) assert.equal(api.isSavedProfileReady({...current},current,colleges),false);
-  for (const key of ['name','studentId','college']) {
-    assert.equal(api.isSavedProfileReady(profile,{...profile,[key]:profile[key]+'x'},colleges),false);
-  }
-  assert.equal(api.isSavedProfileReady(profile,profile,[]),false);
-  assert.equal(api.isSavedProfileReady(profile,profile,['其他学院']),false);
+  ]) assert.equal(api.isProfileReady(current,colleges),false);
+  assert.equal(api.isProfileReady(profile,[]),false);
+  assert.equal(api.isProfileReady(profile,['其他学院']),false);
 });
 
 test('invalid student IDs cannot reach page controls, including from old saved profiles', () => {
@@ -74,17 +71,48 @@ test('unreadable or malformed drafts are ignored and draft storage failure is re
   assert.throws(()=>api.saveProfileDraft('','','',{setItem(){throw Error('blocked');}}),/blocked/);
 });
 
-test('only an explicit matching start request allows one automatic run after refresh', () => {
+test('race seconds must be safe whole seconds of at least two; corrupted settings default to standard', () => {
+  const store = storage();
+  assert.deepEqual(plain(api.loadRunSettings(store)),{mode:'standard',submitSeconds:2});
+  for (const seconds of [2,3,10,' 5 ']) assert.equal(api.parseSubmitSeconds(seconds),Number(seconds));
+  for (const seconds of ['',1,0,-2,1.9,'abc',NaN,Infinity,Number.MAX_SAFE_INTEGER]) {
+    assert.throws(()=>api.parseSubmitSeconds(seconds),/不低于2/);
+  }
+  api.saveRunSettings('race',5,store);
+  assert.deepEqual(plain(api.loadRunSettings(store)),{mode:'race',submitSeconds:5});
+  const previous=store.getItem(api.RUN_SETTINGS_KEY);
+  assert.throws(()=>api.saveRunSettings('race',1,store));
+  assert.equal(store.getItem(api.RUN_SETTINGS_KEY),previous);
+  store.setItem(api.RUN_SETTINGS_KEY,'{invalid');
+  assert.deepEqual(plain(api.loadRunSettings(store)),{mode:'standard',submitSeconds:2});
+  store.setItem(api.RUN_SETTINGS_KEY,JSON.stringify({mode:'race',submitSeconds:1}));
+  assert.equal(api.loadRunSettings(store).mode,'standard');
+});
+
+test('only a matching, recent, explicit race start allows one automatic run after refresh', () => {
   const store = storage();
   const profile = {name:'姓名', studentId:'26000001', college:'学院'};
-  assert.equal(api.consumeStartRequest(profile,store),false);
-  store.setItem(api.START_REQUEST_KEY,JSON.stringify(profile));
-  assert.equal(api.consumeStartRequest(profile,store),true);
-  assert.equal(api.consumeStartRequest(profile,store),false);
-  store.setItem(api.START_REQUEST_KEY,JSON.stringify(profile));
-  assert.equal(api.consumeStartRequest({...profile,studentId:'26000002'},store),false);
+  const settings = {mode:'race',submitSeconds:2};
+  const now = Date.now();
+  const request = {mode:'race',profile,submitSeconds:2,createdAt:now};
+  const consume = (value,expectedProfile=profile,expectedSettings=settings) => {
+    store.setItem(api.START_REQUEST_KEY,JSON.stringify(value));
+    const result=api.consumeStartRequest(expectedProfile,expectedSettings,store,now);
+    assert.equal(store.getItem(api.START_REQUEST_KEY),null);
+    return result;
+  };
+  assert.equal(api.consumeStartRequest(profile,settings,store,now),false);
+  assert.equal(consume(request),true);
+  assert.equal(api.consumeStartRequest(profile,settings,store,now),false);
+  assert.equal(consume({...request,createdAt:now-60001}),false);
+  assert.equal(consume({...request,createdAt:now+1}),false);
+  assert.equal(consume(request,{...profile,studentId:'26000002'}),false);
+  assert.equal(consume(request,profile,{...settings,submitSeconds:3}),false);
+  assert.equal(consume(request,profile,{...settings,mode:'standard'}),false);
+  assert.equal(consume({...request,profile:{...profile,studentId:'bad'}}),false);
+  assert.equal(consume(profile),false); // Legacy reload markers must never arm automatic submission.
+  store.setItem(api.START_REQUEST_KEY,'{invalid');
+  assert.equal(api.consumeStartRequest(profile,settings,store,now),false);
   assert.equal(store.getItem(api.START_REQUEST_KEY),null);
-  store.setItem(api.START_REQUEST_KEY,JSON.stringify({...profile,studentId:'bad'}));
-  assert.equal(api.consumeStartRequest({...profile,studentId:'bad'},store),false);
-  assert.equal(api.consumeStartRequest(profile,{getItem(){throw Error('blocked');}}),false);
+  assert.equal(api.consumeStartRequest(profile,settings,{getItem(){throw Error('blocked');}},now),false);
 });

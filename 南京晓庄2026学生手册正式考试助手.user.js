@@ -4,8 +4,8 @@
 // @author       DreamYuande
 // @license      MIT
 // @homepageURL  https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper
-// @version      1.3.1
-// @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。先临时保存信息，再点击开始填写，校验通过后自动刷新；默认跳过待确认题，可选随机/全选兜底；自带题库，可手动检查更新，不自动提交。
+// @version      1.4.0
+// @description  适配南京晓庄学院2026年学生手册正式考试（YDD4gnE）。标准模式保存后直接填写、不刷新；竞速模式刷新后并行填写，填完至少2秒后自动点击提交，可取消；自带题库并支持手动检查更新。
 // @match        https://ks.wjx.com/vm/YDD4gnE.aspx*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -19,7 +19,8 @@
 // 适用范围：仅限「南京晓庄学院2026年学生手册正式考试」。
 // 唯一适用网页：https://ks.wjx.com/vm/YDD4gnE.aspx
 // 基于模拟考试助手 1.2.2（659cbeb）及其原有参考题库开发。
-// 不自动翻页、提交或处理验证；题库命中不代表官方答案已核实。
+// 标准模式手动提交；竞速模式仅在明确开始、填写完成且检查通过后点击一次提交。
+// 不自动翻页或处理验证；题库命中不代表官方答案已核实。
 
 (() => {
   'use strict';
@@ -33,6 +34,7 @@
   const START_REQUEST_KEY = 'njxzc.handbook.formal.start.v1';
   const FALLBACK_KEY = 'njxzc.handbook.formal.fallback.v1';
   const BANK_CACHE_KEY = 'njxzc.handbook.formal.bank.v1';
+  const RUN_SETTINGS_KEY = 'njxzc.handbook.formal.run-settings.v1';
   const BANK_URL = 'https://gh-proxy.com/https://raw.githubusercontent.com/DreamYuande/njxzc-handbook-2026-exam-helper/refs/heads/main/question-bank.json';
 
   function compareBankVersions(a, b) {
@@ -208,19 +210,43 @@
     return draft;
   }
 
-  function isSavedProfileReady(draft, current, availableColleges) {
-    return Boolean(draft && current.name && /^[0-9]{8}$/.test(current.studentId) &&
-      availableColleges.includes(current.college) &&
-      ['name','studentId','college'].every(key => draft[key] === current[key]));
+  function isProfileReady(current, availableColleges) {
+    return Boolean(current?.name?.trim() && /^[0-9]{8}$/.test(current.studentId) &&
+      availableColleges.includes(current.college));
   }
 
-  function consumeStartRequest(profile, storage) {
+  function parseSubmitSeconds(value) {
+    const seconds = Number(value);
+    if (!Number.isSafeInteger(seconds) || seconds < 2 || !Number.isSafeInteger(Date.now() + seconds * 1000)) {
+      throw new Error('自动提交秒数必须是不低于2的有效整数');
+    }
+    return seconds;
+  }
+
+  function loadRunSettings(storage) {
+    try {
+      const value = JSON.parse((storage || localStorage).getItem(RUN_SETTINGS_KEY) || 'null');
+      return {mode:value?.mode === 'race' ? 'race' : 'standard', submitSeconds:parseSubmitSeconds(value?.submitSeconds ?? 2)};
+    } catch { return {mode:'standard', submitSeconds:2}; }
+  }
+
+  function saveRunSettings(mode, seconds, storage) {
+    const settings = {mode:mode === 'race' ? 'race' : 'standard', submitSeconds:parseSubmitSeconds(seconds)};
+    (storage || localStorage).setItem(RUN_SETTINGS_KEY, JSON.stringify(settings));
+    return settings;
+  }
+
+  function consumeStartRequest(profile, settings, storage, now = Date.now()) {
     try {
       const store = storage || sessionStorage;
-      const request = store.getItem(START_REQUEST_KEY);
+      const stored = store.getItem(START_REQUEST_KEY);
       store.removeItem(START_REQUEST_KEY);
+      const request = JSON.parse(stored || 'null');
       return Boolean(profile?.name && profile?.college && /^[0-9]{8}$/.test(profile.studentId) &&
-        request === JSON.stringify(profile));
+        settings.mode === 'race' && request?.mode === 'race' &&
+        request.submitSeconds === parseSubmitSeconds(settings.submitSeconds) &&
+        Number.isFinite(request.createdAt) && request.createdAt <= now && now - request.createdAt <= 60000 &&
+        JSON.stringify(request.profile) === JSON.stringify(profile));
     } catch { return false; }
   }
 
@@ -438,7 +464,7 @@
 
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-  async function applyPlan(data, plan, keepGoing) {
+  async function applyPlan(data, plan, keepGoing, fast = false) {
     const desired = new Set(plan.indices);
     const expectedType = data.type === '3' ? 'radio' : 'checkbox';
     if (data.options.some(o => !o.input || !o.control || o.input.disabled ||
@@ -449,6 +475,7 @@
       if (isSelected(data.options[i]) === targetState) return true;
       // 使用页面本身的点击事件，使问卷星同步实际答案和界面。
       data.options[i].control.click();
+      if (fast && isSelected(data.options[i]) === targetState) return true;
       for (let attempt = 0; attempt < 5; attempt++) {
         await delay(40);
         if (isSelected(data.options[i]) === targetState) return true;
@@ -472,8 +499,44 @@
     return true;
   }
 
+  function elementVisible(element) {
+    if (!element || !element.getClientRects().length) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
+  }
+
+  function submissionProblem(profile, root = document, checkButton = false) {
+    const info = basicInformationField(root);
+    const college = info?.querySelector('select');
+    if (!profile || info?.querySelector('#q1_0')?.value.trim() !== profile.name ||
+      info?.querySelector('#q1_2')?.value.trim() !== profile.studentId ||
+      college?.selectedOptions[0]?.textContent.trim() !== profile.college ||
+      !readCollegeOptions(root).some(option => option.textContent.trim() === profile.college)) return '基本信息已变化或未填写完整';
+    const fields = [...root.querySelectorAll('.field')].filter(elementVisible);
+    const questions = fields.filter(field => TYPES.has(field.getAttribute('type')));
+    if (!questions.length) return '尚未找到考试题目';
+    for (const field of questions) {
+      const selected = [...field.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter(input => input.checked);
+      if (!selected.length || (field.getAttribute('type') === '3' && selected.length !== 1)) return '仍有未完成题目';
+    }
+    if (fields.some(field => field.getAttribute('req') === '1' && !['3','4','9'].includes(field.getAttribute('type')))) {
+      return '存在需人工检查的其他必填题';
+    }
+    const challenges = '#captcha iframe,#captcha img,#captcha canvas,#captcha input,#divCaptcha,.geetest_panel,.geetest_window,.yidun_modal,.nc_wrapper,.vaptcha-container iframe';
+    if ([...root.querySelectorAll(challenges)].some(elementVisible)) return '页面出现验证码，请手动处理';
+    const errors = '.errorMessage,.error-message,.field-validation-error,#divError,.ui-error,[role="alert"],.layui-layer-content';
+    if ([...root.querySelectorAll(errors)].some(element => elementVisible(element) &&
+      /必答|必填|错误|失败|异常|验证|不允许|已提交|请检查|请完成/.test(element.textContent))) return '页面有错误或验证提示，请手动检查';
+    if (checkButton) {
+      const button = root.querySelector('#ctlNext');
+      if (!elementVisible(button) || button.matches('[disabled],[aria-disabled="true"],.disabled,.loading') ||
+        !/提交/.test(button.textContent) || /下一|已提交|提交中/.test(button.textContent)) return '提交按钮尚不可用，请手动提交';
+    }
+    return '';
+  }
+
   // __TEST_EXPORT_POINT__
-  const SCRIPT_VERSION = '1.3.1';
+  const SCRIPT_VERSION = '1.4.0';
   if (!isTargetPage(location.href)) return;
   if (document.getElementById('njxzc-handbook-formal-helper')) return;
   bankState = readBankCache((key, fallback) => GM_getValue(key, fallback));
@@ -505,10 +568,12 @@
       footer{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid #edf0f5;color:#6a7588;font-size:11px}
       footer a{display:inline-flex;align-items:center;gap:4px;color:#5965da;text-decoration:none;min-height:28px}footer a:hover{text-decoration:underline}footer svg{fill:currentColor;flex-shrink:0}
       .clear-area{flex-shrink:0;padding:0 12px 8px}#clear-data{display:block;width:100%;margin:0 auto;padding:4px 10px;font-size:12px;line-height:1.5;border-radius:6px;background:#fff1f0;color:#c62828}#clear-data:hover:not(:disabled){background:#ffe4e1}
-      .folded .body,.folded footer,.folded .clear-area{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
+      .mode-area{flex-shrink:0;padding:10px 12px 0}.mode-switch{position:relative;display:grid;grid-template-columns:1fr 1fr;padding:3px;border-radius:9px;background:#eef1f7}.mode-switch input{position:absolute;width:1px;height:1px;opacity:0}.mode-switch label{position:relative;z-index:1;margin:0;padding:5px 0;text-align:center;cursor:pointer;font-size:12px;color:#6a7588}.mode-thumb{position:absolute;left:3px;top:3px;bottom:3px;width:calc((100% - 6px)/2);background:#fff;border-radius:6px;box-shadow:0 1px 4px #26324918;transition:transform .18s ease}.mode-switch[data-mode="race"] .mode-thumb{transform:translateX(100%)}.mode-switch input:checked+label{color:#4e59c5;font-weight:700}.mode-switch input:focus-visible+label{outline:2px solid #5965da;border-radius:6px}#race-settings{margin:7px 0}#submission-status{font-size:12px;color:#c62828;white-space:pre-line}#cancel-submit{margin-top:5px;background:#fff1f0;color:#c62828}[hidden]{display:none!important}
+      .folded .body,.folded footer,.folded .clear-area,.folded .mode-area{display:none}@media(max-width:600px){:host{font-size:12px}strong{font-size:13px}}
     </style>
     <section class="card"><header><div><strong>学生手册正式考试助手</strong><span class="script-version">v${SCRIPT_VERSION}</span></div><button id="fold" type="button" aria-label="收起或展开">−</button></header>
-      <div class="body"><div class="muted notice">参考题库非官方答案 · <span>酌情参考</span></div><div class="muted">默认跳过待确认题 · 检查后自行提交</div><div id="status">准备中…</div>
+      <div class="mode-area"><div class="mode-switch" data-mode="standard" role="radiogroup" aria-label="填写模式"><span class="mode-thumb" aria-hidden="true"></span><input id="mode-standard" type="radio" name="run-mode" value="standard" checked><label for="mode-standard">标准模式</label><input id="mode-race" type="radio" name="run-mode" value="race"><label for="mode-race">竞速模式</label></div></div>
+      <div class="body"><div class="muted notice">参考题库非官方答案 · <span>酌情参考</span></div><div class="muted" id="mode-hint"></div><div id="race-settings" hidden><label>填完后自动提交（秒）<input id="submit-seconds" type="number" min="2" step="1" value="2" inputmode="numeric"></label><div id="submission-status" role="status" aria-live="polite"></div><button id="cancel-submit" type="button" hidden>取消自动提交</button></div><div id="status">准备中…</div>
       <div class="actions"><button id="update-bank" type="button">检查题库更新</button></div>
       <div class="muted" id="bank-version"></div><div class="muted" id="bank-message" role="status" aria-live="polite"></div>
       <label>未匹配或待确认题<select id="fallback-mode"><option value="skip">跳过，留待人工检查（默认）</option><option value="guess">单选随机 / 多选全选</option></select></label>
@@ -517,17 +582,18 @@
         <label>姓名<input id="profile-name" type="text" autocomplete="off" placeholder="填写姓名"></label>
         <label>学院<select id="profile-college"><option value="">等待问卷学院列表加载…</option></select></label>
         <label>学号<input id="profile-student-id" type="text" inputmode="numeric" autocomplete="off" placeholder="填写学号"></label>
-        </details><div class="actions profile-actions"><button id="save" type="button">临时保存信息</button><button id="start" type="button" disabled>开始填写</button></div><div id="profile-message" role="status" aria-live="polite"></div></div>
+        </details><div class="actions profile-actions"><button id="save" type="button">临时保存信息</button><button id="start" type="button" disabled>保存并填写</button></div><div id="profile-message" role="status" aria-live="polite"></div></div>
       <div class="clear-area"><button id="clear-data" type="button">清除表单数据</button></div>
       <footer><span>© 2026 DreamYuande</span><a href="https://github.com/DreamYuande/njxzc-handbook-2026-exam-helper" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 GitHub 项目主页"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg><span>GitHub</span></a></footer>
       </section>`;
   document.documentElement.appendChild(host);
 
   let activeProfile = loadProfile();
+  let runSettings = loadRunSettings();
+  let mode = runSettings.mode;
   const draftProfile = loadProfileDraft();
   const initialProfile = draftProfile || activeProfile;
-  let savedDraft = draftProfile;
-  const startRequested = consumeStartRequest(activeProfile);
+  const startRequested = consumeStartRequest(activeProfile, runSettings);
   let auto = Boolean(startRequested && !draftProfile);
   let needsReload = Boolean(initialProfile && !auto);
   let profileReady = false;
@@ -540,19 +606,29 @@
   let reloading = false;
   let clearingData = false;
   let generation = 0;
-  const completed = new WeakMap();
+  let submissionArmed = auto && mode === 'race';
+  let submissionAttempted = false;
+  let submissionDeadline = 0;
+  let submissionTimer;
+  let submissionMessage = '';
+  let completed = new WeakMap();
   const status = panel.getElementById('status');
   const save = panel.getElementById('save');
   const start = panel.getElementById('start');
   const updateBank = panel.getElementById('update-bank');
   const clearData = panel.getElementById('clear-data');
+  const standardMode = panel.getElementById('mode-standard');
+  const raceMode = panel.getElementById('mode-race');
+  const submitSeconds = panel.getElementById('submit-seconds');
+  const cancelSubmit = panel.getElementById('cancel-submit');
+  submitSeconds.value = String(runSettings.submitSeconds);
   const nameSetting = panel.getElementById('profile-name');
   const idSetting = panel.getElementById('profile-student-id');
   const collegeSetting = panel.getElementById('profile-college');
   const fallbackSetting = panel.getElementById('fallback-mode');
   let fallbackMode = loadFallbackMode();
   fallbackSetting.value = fallbackMode;
-  protectSettingsKeyboard([nameSetting,idSetting,collegeSetting,fallbackSetting]);
+  protectSettingsKeyboard([nameSetting,idSetting,collegeSetting,fallbackSetting,submitSeconds,standardMode,raceMode]);
   nameSetting.value = initialProfile?.name || '';
   idSetting.value = initialProfile?.studentId || '';
   let selectedCollege = initialProfile?.college || '';
@@ -589,9 +665,56 @@
   let lastRender = '';
 
   function canStart() {
-    return isSavedProfileReady(savedDraft, {
+    const ready = isProfileReady({
       name:nameSetting.value.trim(), studentId:idSetting.value.trim(), college:collegeSetting.value.trim()
     }, readCollegeOptions().map(option => option.textContent.trim()));
+    try { return ready && (mode !== 'race' || parseSubmitSeconds(submitSeconds.value) >= 2); }
+    catch { return false; }
+  }
+
+  function cancelSubmission(message = '') {
+    submissionArmed = false;
+    submissionDeadline = 0;
+    clearTimeout(submissionTimer);
+    submissionMessage = message;
+  }
+
+  function currentQuestionsComplete() {
+    const fields = [...document.querySelectorAll('.field')].filter(field => TYPES.has(field.getAttribute('type')) && elementVisible(field));
+    return fields.length > 0 && fields.every(field => {
+      const data = readField(field);
+      return data && results.get(field)?.status === 'done' &&
+        completed.get(field) === JSON.stringify([data.type,data.question,data.options.map(option => option.text)]);
+    });
+  }
+
+  function startSubmissionCountdown() {
+    if (!submissionArmed || submissionAttempted || mode !== 'race' || !currentQuestionsComplete()) return;
+    if (submissionDeadline) return;
+    submissionDeadline = Date.now() + runSettings.submitSeconds * 1000;
+    const tick = () => {
+      if (!submissionArmed || submissionAttempted || mode !== 'race') return;
+      if (busy) { submissionTimer = setTimeout(tick,100); return; }
+      const reason = !currentQuestionsComplete() ? '题目已变化或仍未完成' : submissionProblem(activeProfile);
+      if (reason || !auto || needsReload || updatingBank || clearingData) {
+        cancelSubmission((reason || '填写状态已变化') + '，已取消自动提交');
+        renderStatus(); return;
+      }
+      if (Date.now() >= submissionDeadline) {
+        const problem = submissionProblem(activeProfile,document,true);
+        if (problem) { cancelSubmission(problem); renderStatus(); return; }
+        submissionAttempted = true;
+        cancelSubmission('已点击提交，请查看页面结果；如有验证码，请手动完成');
+        auto = false;
+        generation++;
+        renderStatus();
+        document.getElementById('ctlNext').click();
+        return;
+      }
+      renderStatus();
+      submissionTimer = setTimeout(tick,100);
+    };
+    submissionTimer = setTimeout(tick,100);
   }
 
   function renderStatus() {
@@ -604,15 +727,25 @@
     const issues = values.filter(r => r.status !== 'done' || r.fallback);
     const cooldown = Math.max(0, Math.ceil((bankCooldownUntil - Date.now()) / 1000));
     const startReady = canStart();
+    const submitRemaining = submissionDeadline ? Math.max(0,Math.ceil((submissionDeadline-Date.now())/1000)) : 0;
     const complete = fillingComplete && auto && !busy && !needsReload;
-    const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,clearingData,startReady,complete,issues.map(r => [r.number,r.reason])]);
+    const signature = JSON.stringify([auto,done,fallback,needsReload,profileMessage,updatingBank,bankMessage,bankState.bank.version,cooldown,reloading,clearingData,startReady,complete,mode,submitSeconds.value,submissionArmed,submissionMessage,submitRemaining,busy,issues.map(r => [r.number,r.reason])]);
     if (signature === lastRender) return;
     lastRender = signature;
-    status.textContent = `${auto ? '自动模式' : '等待开始'}\n题库 ${done-fallback} 题，随机/全选 ${fallback} 题\n未处理 ${errors} 题`;
-    save.disabled = updatingBank || reloading || clearingData;
-    start.disabled = updatingBank || reloading || clearingData || !startReady;
-    start.title = startReady ? '' : '请填写姓名、选择学院，输入8位数字学号，并临时保存当前信息';
-    start.textContent = reloading ? '正在开始…' : '开始填写';
+    status.textContent = `${auto ? (mode === 'race' ? '竞速模式 · 自动填写' : '标准模式 · 自动填写') : '等待开始'}\n题库 ${done-fallback} 题，随机/全选 ${fallback} 题\n未处理 ${errors} 题`;
+    save.disabled = updatingBank || reloading || clearingData || busy;
+    start.disabled = updatingBank || reloading || clearingData || busy || !startReady;
+    start.title = startReady ? '' : '请填写姓名、选择学院，输入8位数字学号；竞速提交秒数不得低于2';
+    start.textContent = reloading ? '正在开始…' : mode === 'race' ? '保存并竞速' : '保存并填写';
+    standardMode.checked = mode === 'standard';
+    raceMode.checked = mode === 'race';
+    standardMode.disabled = raceMode.disabled = submitSeconds.disabled = updatingBank || reloading || clearingData;
+    panel.querySelector('.mode-switch').dataset.mode = mode;
+    panel.getElementById('mode-hint').textContent = mode === 'race' ? '刷新后快速填写 · 填完后自动提交' : '保存后直接填写 · 检查后自行提交';
+    panel.getElementById('race-settings').hidden = mode !== 'race';
+    cancelSubmit.hidden = !submissionArmed;
+    panel.getElementById('submission-status').textContent = submissionMessage ||
+      (submissionArmed ? submissionDeadline ? `${submitRemaining}秒后自动提交` : `填写完成后${runSettings.submitSeconds}秒自动提交` : '至少2秒；点击保存并竞速后生效');
     updateBank.disabled = updatingBank || cooldown > 0 || reloading || clearingData;
     clearData.disabled = updatingBank || reloading || clearingData;
     clearData.textContent = '清除表单数据';
@@ -620,7 +753,7 @@
     panel.getElementById('bank-version').textContent = `题库 ${bankState.bank.version} · ${bankState.bank.questions.length}题 · ${bankState.source}`;
     panel.getElementById('bank-message').textContent = bankMessage;
     const message = panel.getElementById('profile-message');
-    if (complete) {
+    if (complete && mode === 'standard') {
       const reminder = document.createElement('strong');
       reminder.className = 'notice';
       reminder.textContent = '请勿过早提交以免被判异常';
@@ -654,42 +787,53 @@
           if (!profileReady) return;
         } catch (error) {
           auto = false;
+          cancelSubmission('基本信息填写异常，已取消自动提交');
           profileMessage = `基本信息填写失败：${error.message}`;
           panel.getElementById('settings').open = true;
           return;
         }
       }
       const fields = [...document.querySelectorAll('.field')];
-      for (const field of fields) {
-        if (!auto || generation !== thisGeneration) break;
-        if (!TYPES.has(field.getAttribute('type')) || !field.getClientRects().length) continue;
+      const processField = async field => {
+        if (!auto || generation !== thisGeneration) return;
+        if (!TYPES.has(field.getAttribute('type')) || !field.getClientRects().length) return;
         const data = readField(field);
-        if (!data) continue;
+        if (!data) return;
         const fingerprint = JSON.stringify([data.type, data.question, data.options.map(o => o.text)]);
-        if (completed.get(field) === fingerprint) continue;
+        if (completed.get(field) === fingerprint) return;
         const plan = resolvePlan(data.question, data.type, data.options.map(o => o.text), fallbackMode);
         if (plan.status !== 'ready') {
           results.set(field, {...data, ...plan});
           completed.set(field, fingerprint);
-          continue;
+          return;
         }
         try {
           const finished = await applyPlan(data, plan,
-            () => auto && generation === thisGeneration && field.isConnected);
-          if (!finished) break;
+            () => auto && generation === thisGeneration && field.isConnected, mode === 'race');
+          if (!finished || !auto || generation !== thisGeneration) return;
           results.set(field, {number:data.number, question:data.question, status:'done', fallback:Boolean(plan.fallback), reason:plan.reason});
           completed.set(field, fingerprint);
         } catch (error) {
           auto = false;
+          cancelSubmission('填写出现异常，已取消自动提交');
           results.set(field, {number:data.number, question:data.question, status:'error', reason:error.message});
-          break;
         }
+      };
+      if (mode === 'race') {
+        // 不同题目并行；每一道题内仍按原有顺序点击和校验，避免多选反选。
+        await Promise.all(fields.map(processField));
+      } else {
+        for (const field of fields) await processField(field);
       }
       const visibleQuestions = fields.filter(field => TYPES.has(field.getAttribute('type')) && field.getClientRects().length);
       fillingComplete = auto && generation === thisGeneration && visibleQuestions.length > 0 &&
         visibleQuestions.every(field => results.get(field)?.status === 'done');
     } finally {
       busy = false;
+      if (submissionArmed && fillingComplete) startSubmissionCountdown();
+      else if (submissionArmed && results.size && [...results.values()].some(result => result.status !== 'done')) {
+        cancelSubmission('仍有待确认或未完成题目，自动提交未启动');
+      }
       renderStatus();
     }
   }
@@ -697,6 +841,7 @@
   updateBank.addEventListener('click', async () => {
     if (updatingBank || reloading || clearingData || Date.now() < bankCooldownUntil) return;
     const wasAuto = auto;
+    cancelSubmission(mode === 'race' ? '检查题库更新已取消自动提交，请重新开始竞速' : '');
     updatingBank = true;
     auto = false;
     const updateGeneration = ++generation;
@@ -728,6 +873,7 @@
 
   fallbackSetting.addEventListener('change', () => {
     if (clearingData) return;
+    cancelSubmission(mode === 'race' ? '兜底设置已变化，已取消自动提交' : '');
     fallbackMode = fallbackSetting.value === 'guess' ? 'guess' : 'skip';
     try { localStorage.setItem(FALLBACK_KEY, fallbackMode); }
     catch { profileMessage = '当前浏览器无法保存兜底设置，本次设置仍然有效。'; }
@@ -740,7 +886,7 @@
   });
 
   function profileChanged() {
-    savedDraft = null;
+    cancelSubmission(mode === 'race' ? '基本信息已变化，已取消自动提交' : '');
     selectedCollege = collegeSetting.value;
     auto = false;
     generation++;
@@ -753,14 +899,56 @@
     input.addEventListener('change', profileChanged);
   }
   collegeSetting.addEventListener('change', profileChanged);
+  for (const control of [standardMode,raceMode]) control.addEventListener('change', () => {
+    if (!control.checked || updatingBank || reloading || clearingData) return;
+    mode = control.value;
+    auto = false;
+    generation++;
+    needsReload = true;
+    cancelSubmission();
+    profileMessage = '';
+    try {
+      runSettings = saveRunSettings(mode,runSettings.submitSeconds);
+      sessionStorage.removeItem(START_REQUEST_KEY);
+      submitSeconds.value = String(runSettings.submitSeconds);
+    } catch (error) { profileMessage = `模式未能保存：${error.message}`; }
+    renderStatus();
+  });
+  submitSeconds.addEventListener('input', () => {
+    auto = false;
+    generation++;
+    needsReload = true;
+    cancelSubmission('提交秒数已修改，请重新开始竞速');
+    try { runSettings = saveRunSettings(mode,submitSeconds.value); }
+    catch (error) { submissionMessage = error.message; }
+    renderStatus();
+  });
+  cancelSubmit.addEventListener('click', () => {
+    cancelSubmission('已取消自动提交，请检查后自行提交');
+    renderStatus();
+  });
+  const manualSubmission = () => {
+    if (!submissionArmed) return;
+    submissionAttempted = true;
+    cancelSubmission('已由你操作提交，不再自动提交');
+    auto = false;
+    generation++;
+    renderStatus();
+  };
+  document.addEventListener('click', event => {
+    if (event.target?.closest?.('#ctlNext')) manualSubmission();
+  },true);
+  document.addEventListener('submit',manualSubmission,true);
+  addEventListener('pagehide', () => cancelSubmission());
   function persistProfile(begin) {
-    if (updatingBank || reloading || clearingData) return;
+    if (updatingBank || reloading || clearingData || busy) return;
     if (begin && !canStart()) {
-      profileMessage = '请先临时保存当前信息。';
+      profileMessage = '请填写完整有效的基本信息；竞速提交秒数不得低于2。';
       renderStatus();
       return;
     }
     auto = false;
+    cancelSubmission();
     generation++;
     needsReload = true;
     try {
@@ -769,15 +957,28 @@
           throw new Error('请从当前问卷的学院列表中选择学院；若列表未加载，请稍后重试');
         }
         activeProfile = saveProfile(nameSetting.value, idSetting.value, collegeSetting.value);
-        sessionStorage.setItem(START_REQUEST_KEY, JSON.stringify(activeProfile));
+        runSettings = saveRunSettings(mode, mode === 'race' ? submitSeconds.value : runSettings.submitSeconds);
+        sessionStorage.removeItem(START_REQUEST_KEY);
         localStorage.removeItem(PROFILE_DRAFT_KEY);
-        profileMessage = '正在刷新并开始填写…';
-        reloading = true;
-        renderStatus();
-        location.reload();
+        profileReady = false;
+        fillingComplete = false;
+        results.clear();
+        completed = new WeakMap();
+        submissionAttempted = false;
+        if (mode === 'race') {
+          sessionStorage.setItem(START_REQUEST_KEY,JSON.stringify({mode:'race',profile:activeProfile,submitSeconds:runSettings.submitSeconds,createdAt:Date.now()}));
+          profileMessage = '正在刷新并开始竞速…';
+          reloading = true;
+          renderStatus();
+          location.reload();
+        } else {
+          profileMessage = '';
+          needsReload = false;
+          auto = true;
+          panel.getElementById('settings').open = false;
+        }
       } else {
-        savedDraft = null;
-        savedDraft = saveProfileDraft(nameSetting.value, idSetting.value, collegeSetting.value);
+        saveProfileDraft(nameSetting.value, idSetting.value, collegeSetting.value);
         profileMessage = '信息已临时保存。';
       }
     } catch (error) {
@@ -786,6 +987,7 @@
       panel.getElementById('settings').open = true;
     }
     renderStatus();
+    if (begin && auto && !reloading) void scan();
   }
   save.addEventListener('click', () => persistProfile(false));
   start.addEventListener('click', () => persistProfile(true));
@@ -794,10 +996,11 @@
     if (!confirm('确定清除表单数据并刷新页面吗？\n\n将尝试清理已保存的信息、当前网站可访问的 Cookie 和缓存，可能影响同站点其他页面。浏览器保护的数据不会被清除。')) return;
     clearingData = true;
     auto = false;
+    cancelSubmission();
     generation++;
     needsReload = true;
     fillingComplete = false;
-    savedDraft = activeProfile = null;
+    activeProfile = null;
     profileReady = false;
     profileMessage = '';
     renderStatus();
@@ -807,6 +1010,9 @@
     bankMessage = '';
     bankCooldownUntil = 0;
     fallbackMode = fallbackSetting.value = 'skip';
+    runSettings = {mode:'standard',submitSeconds:2};
+    mode = 'standard';
+    submitSeconds.value = '2';
     nameSetting.value = idSetting.value = selectedCollege = '';
     collegeSetting.value = '';
     results.clear();
@@ -858,7 +1064,7 @@
   panelObserver.observe(host);
   // 每个题目只处理一次；手动调整后不会反复被覆盖。
   renderStatus();
-  setTimeout(() => { void scan(); }, 1000);
+  setTimeout(() => { void scan(); }, auto && mode === 'race' ? 0 : 1000);
   setInterval(() => { void scan(); }, 900);
 })();
 
